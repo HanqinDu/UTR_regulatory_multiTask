@@ -1,0 +1,369 @@
+---
+title: "hanqin_visualize_data"
+author: "Hanqin Du"
+date: "2019/10/13"
+output: html_document
+editor_options:
+  chunk_output_type: console
+---
+
+## Rstudio set up
+
+```{R set project folder}
+par(mfrow=c(1,1))
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("..")
+getwd()
+```
+
+
+## Load library
+```{r load library}
+
+library(data.table)
+library(tidyverse)
+#library(glmnet)
+library(lmodel2)
+library(splitstackshape)
+#library(ggplot2)
+
+```
+
+## Load function
+```{r load function}
+
+mse <- function(model){
+  mean(summary(model)$residuals^2)
+}
+
+
+plot_mean_deviation <- function(data,name,mean,deviation){
+  plot(1:dim(data)[1],data[[mean]], pch=19,xlab="",ylab="coefficient",xaxt="n",xlim = c(0.5,dim(data)[1]+0.5),
+       ylim=c(min(data[mean]-data[deviation]),max((data[mean]+data[deviation]))))
+  lines(rbind(1:dim(data)[1],1:dim(data)[1],NA),rbind(data[[mean]]-data[[deviation]],data[[mean]]+data[[deviation]],NA))
+  axis(side=1,at=1:dim(data)[1],labels=data[[name]])
+}
+
+
+```
+
+
+
+
+```{R Load Data}
+
+#ref datasets for UTRs 
+UTR_raw <- read_rds("data/Sun_mutation_UTRs.rds")
+  #Get sequences from UTR_raw in a separate vector
+  UTR_3 <- UTR_raw$UTR3_seq
+
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("data/list_motifs.txt", character())
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+
+# load Gasch's data
+expressionLevel_Gasch <- read_tsv("data/Gasch2000_complete_dataset_rename.txt", 
+                       locale = locale(decimal = ","))
+
+# convert all the expression data to number
+for (i in names(expressionLevel_Gasch)[3:175]) {
+  expressionLevel_Gasch[[i]] <- as.numeric(as.character(expressionLevel_Gasch[[i]]))
+}
+
+names_environment_conditions = names(expressionLevel_Gasch)[4:175]
+
+```
+
+
+## Calculate 3'UTR Motif Frequencies from 3'UTR Ref sequences
+```{r motif search}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs <- tibble(geneName = UTR_raw$genename)
+
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+ref_motifs <- mutate(.data = ref_motifs, 
+                      !!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+names_motifs_all <- names(ref_motifs)[2:length(ref_motifs)]
+```
+
+
+## merge motif frequency matrix with Gasch's data
+```{r merge motifs frequency with gasch data}
+
+# merge motifs
+fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
+
+# remove useless motifs
+motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
+
+remove_list = NULL
+
+for (i in names(motifs_count_sum)){
+  if (motifs_count_sum[[i]] == 0){
+    remove_list <- c(remove_list,i)
+  }
+}
+
+names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
+
+# convert type of motifs frequency to factor for violin plotting
+fullTable_Gasch_factor = fullTable_Gasch
+for(i in names_motifs_all){
+    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
+}
+
+```
+
+```{check motif frequency}
+mean(motifs_count_sum)
+median(motifs_count_sum)
+
+plot(motifs_count_sum)
+hist(motifs_count_sum)
+hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,50,3000))
+
+length(motifs_count_sum[motifs_count_sum == 0])
+length(motifs_count_sum[motifs_count_sum < 6 & motifs_count_sum > 0])
+length(motifs_count_sum[motifs_count_sum < 20 & motifs_count_sum > 5])
+
+```
+
+
+## compute correlation coefficient
+```{r obtain corrilation factor}
+
+# pick a group of temperature condition
+names_temperature_condition = vector(mode="character", length=5)
+names_temperature_condition[1] = "hs_17to37_20min"
+names_temperature_condition[2] = "hs_21to37_20min"
+names_temperature_condition[3] = "hs_25to37_20min"
+names_temperature_condition[4] = "hs_29to37_20min"
+names_temperature_condition[5] = "hs_33to37_20min"
+
+# compute correlation coefficient
+motif_overview <- as.data.frame(
+  cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
+
+# compute mean
+motif_overview$R_mean <- rowMeans(motif_overview[names_temperature_condition[1:5]])
+
+```
+
+
+```{plot to check correlation}
+
+# apply filter |x| > 0.05 to check significant value
+correlation_filter <- motif_overview[names_temperature_condition]
+correlation_filter[correlation_filter<0.05&correlation_filter>-0.05] <- NA
+
+#plot mean of 
+plot(motif_overview$R_mean)
+
+# plot violin graph to check distribution
+ggplot(fullTable_Gasch_factor,aes(x=UGUAHMNUA,y=hs_17to37_20min)) + geom_violin()
+ggplot(fullTable_Gasch_factor,aes(x=TGTATAWT,y=hs_17to37_20min)) + geom_violin()
+ggplot(fullTable_Gasch_factor,aes(x=ATATTC,y=hs_17to37_20min)) + geom_violin()
+
+
+# plot multi-line to check if any motif sensitive to temperature
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn))
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[1:5,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[6:10,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[11:15,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[16:20,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[21:25,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[26:30,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[31:35,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[36:40,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[41:45,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview[46:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
+
+
+
+```
+
+
+## carry out linear regression on two set of expression data
+```{r train linear models and organize the coefficient to motif_overview}
+
+# train models
+formula_lm_17to37 <- as.formula(paste("hs_17to37_20min ~",paste(names_motifs_valid, collapse = "+")))
+lm_17to37 = lm(formula_lm_17to37,fullTable_Gasch)
+
+formula_lm_25to37 <- as.formula(paste("hs_25to37_20min ~",paste(names_motifs_valid, collapse = "+")))
+lm_25to37 = lm(formula_lm_25to37,fullTable_Gasch)
+
+
+# organize linear model's data and merge them into motif_overview 
+coefficients_lm_17to37 = as.data.frame(summary(lm_17to37)$coefficients)
+colnames(coefficients_lm_17to37)[colnames(coefficients_lm_17to37)=="Estimate"] <- "W_17to37"
+colnames(coefficients_lm_17to37)[colnames(coefficients_lm_17to37)=="Std. Error"] <- "SE_17to37"
+
+coefficients_lm_25to37 = as.data.frame(summary(lm_25to37)$coefficients)
+colnames(coefficients_lm_25to37)[colnames(coefficients_lm_25to37)=="Estimate"] <- "W_25to37"
+colnames(coefficients_lm_25to37)[colnames(coefficients_lm_25to37)=="Std. Error"] <- "SE_25to37"
+
+
+motif_overview <- merge(motif_overview,
+              cbind(coefficients_lm_17to37[c('W_17to37','SE_17to37')],coefficients_lm_25to37[c('W_25to37','SE_25to37')]),
+              by = "row.names")
+
+motif_overview <- transform(motif_overview, row.names=Row.names)
+colnames(motif_overview)[colnames(motif_overview)=="Row.names"] <- "motif"
+
+```
+
+```{check linear model}
+
+# coefficient from linear model: "hs_17to37_20min"
+summary(lm_17to37)
+plot(lm_17to37)
+mse(lm_17to37)
+
+plot_mean_deviation(motif_overview[1:10,],"motif","W_17to37","SE_17to37")
+plot_mean_deviation(motif_overview[11:20,],"motif","W_17to37","SE_17to37")
+plot_mean_deviation(motif_overview[21:30,],"motif","W_17to37","SE_17to37")
+plot_mean_deviation(motif_overview[31:40,],"motif","W_17to37","SE_17to37")
+plot_mean_deviation(motif_overview[41:50,],"motif","W_17to37","SE_17to37")
+
+
+# coefficient from linear model: "hs_25to37_20min"
+summary(lm_25to37)
+plot(lm_25to37)
+mse(lm_25to37)
+
+plot_mean_deviation(motif_overview[1:10,],"motif","W_25to37","SE_25to37")
+plot_mean_deviation(motif_overview[11:20,],"motif","W_25to37","SE_25to37")
+plot_mean_deviation(motif_overview[21:30,],"motif","W_25to37","SE_25to37")
+plot_mean_deviation(motif_overview[31:40,],"motif","W_25to37","SE_25to37")
+plot_mean_deviation(motif_overview[41:50,],"motif","W_25to37","SE_25to37")
+
+
+# motif with unexpected high coefficient
+ggplot(fullTable_Gasch_factor,aes(x=WAAAGGTAGTAAGT,y=hs_17to37_20min)) + geom_violin() + geom_point()
+ggplot(fullTable_Gasch_factor,aes(x=TTTTCTAGGDD,y=hs_17to37_20min)) + geom_violin() + geom_point()
+ggplot(fullTable_Gasch_factor,aes(x=WWTMGTATATTGTMA,y=hs_17to37_20min)) + geom_violin() + geom_point()
+ggplot(fullTable_Gasch_factor,aes(x=RAGGAGACGT,y=hs_17to37_20min)) + geom_violin() + geom_point()
+
+# motif expected and have a high coefficient
+ggplot(fullTable_Gasch_factor,aes(x=UGUAHMNUA,y=hs_17to37_20min)) + geom_violin() + geom_point()
+ggplot(fullTable_Gasch_factor,aes(x=ATATTC,y=hs_17to37_20min)) + geom_violin() + geom_point()
+ggplot(fullTable_Gasch_factor,aes(x=TGTATAWT,y=hs_17to37_20min)) + geom_violin() + geom_point()
+
+# motif expected and have a low coefficient
+ggplot(fullTable_Gasch_factor,aes(x=HWNCAUUWY,y=hs_17to37_20min)) + geom_violin() + geom_point()
+ggplot(fullTable_Gasch_factor,aes(x=AGACAATCT,y=hs_17to37_20min)) + geom_violin() + geom_point()
+
+
+```
+
+
+## carry out linear regression with high-frequency motif
+```{r remove motif with small frequency}
+
+# filter out motif with frequency lower than 20
+remove_list = NULL
+
+for (i in names(motifs_count_sum)){
+  if (motifs_count_sum[[i]] < 20){
+    remove_list <- c(remove_list,i)
+  }
+}
+
+names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
+
+
+# train models
+formula_lm_17to37 <- as.formula(paste("hs_17to37_20min ~",paste(names_motifs_valid, collapse = "+")))
+lm_17to37 = lm(formula_lm_17to37,fullTable_Gasch)
+
+formula_lm_25to37 <- as.formula(paste("hs_25to37_20min ~",paste(names_motifs_valid, collapse = "+")))
+lm_25to37 = lm(formula_lm_25to37,fullTable_Gasch)
+
+
+# organize linear model's data and merge them into motif_overview 
+coefficients_lm_17to37 = as.data.frame(summary(lm_17to37)$coefficients)
+colnames(coefficients_lm_17to37)[colnames(coefficients_lm_17to37)=="Estimate"] <- "W_17to37_filtered"
+colnames(coefficients_lm_17to37)[colnames(coefficients_lm_17to37)=="Std. Error"] <- "SE_17to37_filtered"
+
+coefficients_lm_25to37 = as.data.frame(summary(lm_25to37)$coefficients)
+colnames(coefficients_lm_25to37)[colnames(coefficients_lm_25to37)=="Estimate"] <- "W_25to37_filtered"
+colnames(coefficients_lm_25to37)[colnames(coefficients_lm_25to37)=="Std. Error"] <- "SE_25to37_filtered"
+
+
+motif_overview <- merge(motif_overview,
+              cbind(coefficients_lm_17to37[c('W_17to37_filtered','SE_17to37_filtered')],
+                    coefficients_lm_25to37[c('W_25to37_filtered','SE_25to37_filtered')]),
+              all = TRUE,by = "row.names")
+
+motif_overview <- motif_overview[-1,-1]
+motif_overview <- transform(motif_overview, row.names=motif)
+
+```
+
+
+```{check data}
+#plot(fullTable_Gasch$WUUGUAWUWU,fullTable_Gasch$`heat shock 17 to 37, 20 minutes`)
+#plot(fullTable_Gasch$AAAATAAAG,fullTable_Gasch$`heat shock 17 to 37, 20 minutes`)
+
+summary(lm_17to37)
+plot(lm_17to37)
+mse(lm_17to37)
+
+plot_mean_deviation(motif_overview[names_motifs_valid[1:10],],"motif","W_17to37_filtered","SE_17to37_filtered")
+plot_mean_deviation(motif_overview[names_motifs_valid[11:21],],"motif","W_17to37_filtered","SE_17to37_filtered")
+
+
+summary(lm_25to37)
+plot(lm_25to37)
+mse(lm_25to37)
+
+plot_mean_deviation(motif_overview[names_motifs_valid[1:10],],"motif","W_25to37_filtered","SE_25to37_filtered")
+plot_mean_deviation(motif_overview[names_motifs_valid[11:21],],"motif","W_25to37_filtered","SE_25to37_filtered")
+
+
+```
+
+
+```{view distribution for interest motifs}
+# apply filter |x| > 0.05 to check significant value
+motif_overview_filter <- motif_overview
+motif_overview_filter[motif_overview_filter<0.05&motif_overview_filter>-0.05] <- NA
+
+```
+
+
+
+
+
