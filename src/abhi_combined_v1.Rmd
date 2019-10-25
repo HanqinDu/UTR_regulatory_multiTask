@@ -1,0 +1,777 @@
+---
+title: "Abhishek Honours Project Combined"
+author: "Abhishek Jain"
+date: "10th May 2019"
+output: 
+  md_document:
+    variant: markdown_github
+editor_options:
+  chunk_output_type: console
+---
+
+## Initation:
+
+```{R Setup}
+library(tidyverse)
+library(glmnet)
+library(lmodel2)
+
+library(ggplot2)
+#theme for ggplot  
+  theme_coding <- function(...){
+  theme_bw()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid = element_blank(),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), units = , "cm"),
+        plot.title = element_text(size = 20, vjust = 1, hjust = 0.5),
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.position = c(0.9, 0.9))
+}
+
+#titles function incomplete
+  x_y_titles <- function(){
+    
+    
+  }
+  
+#defining fun color for scheming
+colour <- c(teal = "#237E8A", green = "#1A8A21", red = "#A62621")
+
+```
+
+```{R Load Data}
+#check directory with getwd()) is root, not src (in case of error)
+
+#ref datasets for UTRs 
+UTR_raw <- read_rds("data/Sun_mutation_UTRs.rds")
+  #Get sequences from UTR_raw in a separate vector
+  UTR_3 <- UTR_raw$UTR3_seq
+
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("data/list_motifs.txt", character())
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+#single cell variation data
+sc_raw <-read_tsv("data/YPD_scRNA.tab")
+
+#this is sun et al 2013 decay rate data
+  dr_raw_s <- read_tsv("data/sun_total_dr.txt", 
+                       locale = locale(decimal = ","))
+  #change weird name of 3rd column and orf to consistent ones geneName
+  colnames(dr_raw_s)[3] <- "d_rate"
+  colnames(dr_raw_s)[1] <- "geneName" 
+
+#this is new karsten/Chan et al 2018 data
+  dr_raw_k <- read_tsv("data/new_karsten_dr_data.txt")
+
+  
+```
+
+Next process the decay data and streamline. 
+  Karsten data contains replicates which were visualised with lmodel and ggplot to have good agreement, and were then combined by taking mean.
+  
+```{R Fix Decay Rate Datasets}
+#convert decayrate in sun et al to hlife and remove other cols
+dr_data_s <- dr_raw_s %>%
+  dplyr::select(geneName, d_rate) %>%
+    mutate(hlife = log(2)/d_rate) %>% 
+      dplyr::select(-d_rate)
+
+dr_data_k <- dr_raw_k %>% 
+  rename_all(~c("geneName","gene","hlife_r1","hlife_r2")) %>%
+    dplyr::select(-gene) %>%
+      #get means for replicates
+      mutate(hlife = rowMeans(cbind(hlife_r1, hlife_r2), na.rm = TRUE)) %>% 
+        filter(is.finite(hlife)) %>%
+          dplyr::select(geneName, hlife)
+
+dr_data_both <- full_join(dr_data_s, dr_data_k, by = "geneName", suffix = c("_sun","_kar"))
+
+#Plot replicates of Chan et al against each other
+
+#RMA to see agreement 
+rma_k_rep <- dr_raw_k %>% 
+  lmodel2(data = ., halflife_160412_r2 ~ halflife_160412_r1)
+
+dr_raw_k %>% 
+    ggplot(., aes(x = halflife_160412_r1, y = halflife_160412_r2)) +
+    geom_point(col = colour["teal"], alpha = 0.25) +
+    theme_coding() + 
+    scale_x_continuous(limits = c(NA, 80)) + 
+    scale_y_continuous(limits = c(NA, 80)) +
+    theme_coding() + 
+    labs(y = "Half Life (min) R1", 
+         x = "Half Life (min) R2", 
+         title = bquote(R^2 ==.(round(rma_k_rep$rsquare, 2))))
+```
+
+```{R Compare Decay Rate Data}
+
+#jUst summary of both to calculate r-squared
+lm_dr_both <- dr_data_both %>%
+  lm(data = ., hlife_sun ~ hlife_kar) %>% 
+    summary()
+
+dr_data_both %>%
+  ggplot(aes(x = hlife_kar, y = hlife_sun)) +
+    geom_point(col = colour["teal"], alpha = 0.25) + 
+    scale_x_continuous(limits = c(NA, 80)) + 
+    scale_y_continuous(limits = c(NA, 80)) +
+    theme_coding() + 
+    labs(y = "Half Life (min) Sun et al.", 
+         x = "Half Life (min) Chan et al.", 
+         title = bquote(R^2 ==.(round(lm_dr_both$r.squared, 2))))
+
+
+```
+
+```{R Calculate Cell to cell Variation - CV^2}
+
+#new dataframe with various measures of variation from sc_raw data
+sc_summ_various <- sc_raw %>%
+  select(-comGeneName)%>%
+  gather(key = "cell", value = "transcripts", -geneName)%>%
+    group_by(geneName)%>%
+      #add columns with different measures of variation
+      summarize(mean_t = mean(transcripts), 
+             stdev_t = sd(transcripts),
+             variance_t = var(transcripts))%>%
+      filter(mean_t > 0)%>%
+      mutate(VMR_t = variance_t/mean_t,
+             CV_t = stdev_t/mean_t,
+             CV2_t = (CV_t^2))
+
+#These were modeled earlier version and CV and CV2 were best models
+sc_summ <- sc_summ_various %>%
+  select(geneName, CV2_t, mean_t)
+
+#combine all three datasets
+data_all <- left_join(dr_data_both, sc_summ, by = "geneName")
+
+```
+
+```{R Compare Half Lives variation relationship}
+rma_cv_s <- data_all %>%
+  filter(is.na(CV2_t) == FALSE && is.na(hlife_sun) == FALSE) %>%
+    lmodel2(data = ., formula = log2(CV2_t) ~ log2(hlife_sun),
+            "interval", "interval")
+
+rma_cv_k <- data_all %>%
+  filter(is.na(CV2_t) == FALSE && is.na(hlife_kar) == FALSE) %>%
+  lmodel2(data = ., formula = log2(CV2_t) ~ log2(hlife_kar),
+          "interval", "interval")
+
+#plot CV2 vs half life
+plot_cv2_hlife <- data_all %>% 
+  select(geneName, hlife_sun, CV2_t) %>%
+    ggplot(., aes(x = log2(hlife_sun), y = log2(CV2_t))) +
+      geom_point(col = colour["teal"], alpha = 0.25) + 
+        scale_x_continuous(limits = c(0, 5)) + 
+      theme_coding() + 
+      geom_abline(slope = rma_cv_s$regression.results$Slope[4], 
+                  intercept = rma_cv_s$regression.results$Intercept[4], 
+                  col = colour["red"], size = 1) + 
+      labs(x = bquote('log'['2']*~(Half~Life)), 
+           y = bquote('log'['2']*~(CV^2)),
+           title = bquote(r ==.(round(rma_cv_s$r, 2))))
+
+plot_cv2_hlife_k <- data_all %>% 
+  select(geneName, hlife_kar, CV2_t) %>%
+    ggplot(., aes(x = log2(hlife_kar), y = log2(CV2_t))) +
+      geom_point(col = colour["teal"], alpha = 0.25) + 
+        scale_x_continuous(limits = c(0, 5)) + 
+      theme_coding() + 
+      geom_abline(slope = rma_cv_k$regression.results$Slope[4], 
+                  intercept = rma_cv_k$regression.results$Intercept[4], 
+                  col = colour["red"], size = 1) + 
+      labs(x = bquote('log'['2']*~(Half~Life)), 
+           y = bquote('log'['2']*~(CV^2)),
+           title = bquote(r ==.(round(rma_cv_k$r, 2))))
+
+gridExtra::grid.arrange(plot_cv2_hlife, plot_cv2_hlife_k, ncol = 2)
+```
+
+##Begin Motif Analysis
+
+Calculate 3'UTR Motif Frequencies from 3'UTR Ref sequences
+```{R motif search}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs <- tibble(geneName = UTR_raw$genename)
+
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+ref_motifs <- mutate(.data = ref_motifs, 
+                      !!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+
+```
+
+Add motif frequencies to each dataset
+
+```{R Add Motif Information}
+
+#add coefficient of variation CV2
+ref_motifs_sc <- left_join(ref_motifs, sc_summ, by = "geneName") %>%
+  filter(is.finite(CV2_t))
+
+#add dr data for Chan et al
+ref_motifs_k_dr <- left_join(ref_motifs, dr_data_k, by = "geneName") %>%
+  filter(is.finite(hlife))
+
+#add dr data for Sun et al
+ref_motifs_s_dr <- left_join(ref_motifs, dr_data_s, by = "geneName") %>%
+  filter(is.finite(hlife))
+
+#add to combined data
+ref_motifs_all <- left_join(ref_motifs, data_all, by = "geneName")
+```
+
+#Build Boxplots
+
+```{R Boxplots for data_s}
+#Convert frequency of motif into >= limit
+data_box_s <- ref_motifs_s_dr %>%
+  dplyr::select(hlife, ATATTC, TGCAT, TGTAAATA, TTTTTTA) %>%
+  mutate(ATATTC = replace(ATATTC, ATATTC >= 2, 2),
+         TGCAT = replace(TGCAT, TGCAT >= 3, 3),
+         TGTAAATA = replace(TGTAAATA, TGTAAATA >= 1, 1),
+         TTTTTTA = replace(TTTTTTA, TTTTTTA >= 2, 2)) 
+
+
+plot_ATATTC <- data_box_s %>%
+  ggplot(., aes(x = ATATTC, y = hlife)) +
+    geom_boxplot(aes(group = ATATTC)) + 
+    scale_x_continuous(breaks = c(0,1,2), labels = c("0", "1", ">=2")) +
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = bquote(Half~Life~(min)))
+
+
+plot_TGCAT <- data_box_s %>%
+  ggplot(data = ., aes(x = TGCAT, y = hlife)) +
+    geom_boxplot(aes(group = TGCAT)) + 
+    scale_x_continuous(breaks = c(0,1,2,3), labels = c("0", "1", "2", ">=3"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+plot_TGTAAATA <- data_box_s %>%
+  ggplot(data = ., aes(x = TGTAAATA, y = hlife)) +
+    geom_boxplot(aes(group = TGTAAATA)) + 
+    scale_x_continuous(breaks = c(0,1), labels = c("0", ">=1"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+
+plot_TTTTTTA <- data_box_s %>%
+  ggplot(data = ., aes(x = TTTTTTA, y = hlife)) +
+    geom_boxplot(aes(group = TTTTTTA)) + 
+    scale_x_continuous(breaks = c(0,1,2), labels = c("0", "1", ">=2"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+gridExtra::grid.arrange(plot_ATATTC, plot_TGCAT, plot_TGTAAATA, plot_TTTTTTA, ncol=4)
+
+```
+
+```{R Boxplots for data_k}
+#Convert frequency of motif into >= limit
+data_box_k <- ref_motifs_k_dr %>%
+  dplyr::select(hlife, ATATTC, TGCAT, TGTAAATA, TTTTTTA) %>%
+  mutate(ATATTC = replace(ATATTC, ATATTC >= 2, 2),
+         TGCAT = replace(TGCAT, TGCAT >= 3, 3),
+         TGTAAATA = replace(TGTAAATA, TGTAAATA >= 1, 1),
+         TTTTTTA = replace(TTTTTTA, TTTTTTA >= 2, 2)) 
+
+
+plot_ATATTC <- data_box_k %>%
+  ggplot(., aes(x = ATATTC, y = hlife)) +
+    geom_boxplot(aes(group = ATATTC)) + 
+    scale_x_continuous(breaks = c(0,1,2), labels = c("0", "1", ">=2")) +
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = bquote(Half~Life~(min)))
+
+
+plot_TGCAT <- data_box_k %>%
+  ggplot(data = ., aes(x = TGCAT, y = hlife)) +
+    geom_boxplot(aes(group = TGCAT)) + 
+    scale_x_continuous(breaks = c(0,1,2,3), labels = c("0", "1", "2", ">=3"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+plot_TGTAAATA <- data_box_k %>%
+  ggplot(data = ., aes(x = TGTAAATA, y = hlife)) +
+    geom_boxplot(aes(group = TGTAAATA)) + 
+    scale_x_continuous(breaks = c(0,1), labels = c("0", ">=1"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+
+plot_TTTTTTA <- data_box_k %>%
+  ggplot(data = ., aes(x = TTTTTTA, y = hlife)) +
+    geom_boxplot(aes(group = TTTTTTA)) + 
+    scale_x_continuous(breaks = c(0,1,2), labels = c("0", "1", ">=2"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+gridExtra::grid.arrange(plot_ATATTC, plot_TGCAT, plot_TGTAAATA, plot_TTTTTTA, ncol=4)
+
+```
+
+Identical code for single cell data 
+```{R Boxplots for scRNA}
+#Convert frequency of motif into >= limit
+data_box_sc <- ref_motifs_sc %>%
+  dplyr::select(CV2_t, ATATTC, TGCAT, TGTAAATA, TTTTTTA) %>%
+  mutate(ATATTC = replace(ATATTC, ATATTC >= 2, 2),
+         TGCAT = replace(TGCAT, TGCAT >= 3, 3),
+         TGTAAATA = replace(TGTAAATA, TGTAAATA >= 1, 1),
+         TTTTTTA = replace(TTTTTTA, TTTTTTA >= 2, 2)) 
+
+
+plot_ATATTC <- data_box_sc %>%
+  ggplot(., aes(x = ATATTC, y = CV2_t)) +
+    geom_boxplot(aes(group = ATATTC)) + 
+    scale_x_continuous(breaks = c(0,1,2), labels = c("0", "1", ">=2")) +
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = bquote(CV^2))
+
+
+plot_TGCAT <- data_box_sc %>%
+  ggplot(data = ., aes(x = TGCAT, y = CV2_t)) +
+    geom_boxplot(aes(group = TGCAT)) + 
+    scale_x_continuous(breaks = c(0,1,2,3), labels = c("0", "1", "2", ">=3"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+plot_TGTAAATA <- data_box_sc %>%
+  ggplot(data = ., aes(x = TGTAAATA, y = CV2_t)) +
+    geom_boxplot(aes(group = TGTAAATA)) + 
+    scale_x_continuous(breaks = c(0,1), labels = c("0", ">=1"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+
+plot_TTTTTTA <- data_box_sc %>%
+  ggplot(data = ., aes(x = TTTTTTA, y = CV2_t)) +
+    geom_boxplot(aes(group = TTTTTTA)) + 
+    scale_x_continuous(breaks = c(0,1,2), labels = c("0", "1", ">=2"))+
+    scale_y_continuous(trans = "log10", breaks = c(1,5,10,20,40,150)) + 
+    labs(y = element_blank())
+
+gridExtra::grid.arrange(plot_ATATTC, plot_TGCAT, plot_TGTAAATA, plot_TTTTTTA, ncol=4)
+
+```
+
+#Setting up for Modelling
+
+```{R Convert all data to binary}
+
+##ScRNA data
+model_data_sc <- ref_motifs_sc %>%
+  #convert motif frequencies to presence and then to factor
+    mutate_at(motifs_raw, funs(replace(., .>= 1, 1))) %>%
+    mutate_at(motifs_raw, funs(factor(.) )) %>%
+  #also convert to CV2_t to log2fold
+    mutate(log2_CV2_t = log2(CV2_t)) %>%
+    select(-CV2_t)
+
+##Decay Data
+model_data_s_dr <- ref_motifs_s_dr %>%
+  #convert motif frequencies to presence and then to factor
+    mutate_at(motifs_raw, funs(replace(., .>= 1, 1)))%>%
+    mutate_at(motifs_raw, funs(factor(.) ))%>%
+  #also convert to hlife to log2fold
+    mutate(log2_hlife = log2(hlife))%>%
+    select(-hlife)
+
+##Decay Data Karsten/Chan
+model_data_k_dr <- ref_motifs_k_dr %>%
+  #convert motif frequencies to presence and then to factor
+    mutate_at(motifs_raw, funs(replace(., .>= 1, 1)))%>%
+    mutate_at(motifs_raw, funs(factor(.) ))%>%
+  #also convert to hlife to log2fold
+    mutate(log2_hlife = log2(hlife))%>%
+    select(-hlife)
+
+```
+
+#Perform LMs for Cheng et al Motifs
+
+```{R LM for Cheng motifs - Sun et al 2013}
+
+#to create separate linear model for each motif
+each_model_s_dr <- model_data_s_dr %>%
+  dplyr::select(log2_hlife, ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+  gather("motif", "presence", ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+    group_by(motif) %>%
+      #create an lm for each motif - will be stored as a tibble
+      do(each_lm = lm(log2_hlife ~ presence, data = .)) %>%
+    ungroup()
+
+#to create a multiple linear model
+all_lm_s_dr <- model_data_s_dr %>%
+  dplyr::select(log2_hlife, ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+    lm(data = ., 
+       log2_hlife ~ ATATTC + TGTAAATA + TGCAT + TTTTTTA)
+
+```
+
+```{R LM for Cheng motifs - Chan et al 2018}
+
+#to create separate linear model for each motif
+each_model_k_dr <- model_data_k_dr %>%
+  dplyr::select(log2_hlife, ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+  gather("motif", "presence", ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+    group_by(motif) %>%
+      #create an lm for each motif - will be stored as a tibble
+      do(each_lm = lm(log2_hlife ~ presence, data = .)) %>%
+    ungroup()
+
+#to create a multiple linear model
+all_lm_k_dr <- model_data_k_dr %>%
+  dplyr::select(log2_hlife, ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+    lm(data = ., 
+       log2_hlife ~ ATATTC + TGTAAATA + TGCAT + TTTTTTA)
+
+```
+
+```{R LM for Cheng motifs - scRNA data}
+
+#to create separate linear model for each motif
+each_model_sc <- model_data_sc %>%
+  dplyr::select(log2_CV2_t, ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+  gather("motif", "presence", ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+    group_by(motif) %>%
+      #create an lm for each motif - will be stored as a tibble
+      do(each_lm = lm(log2_CV2_t ~ presence, data = .)) %>%
+    ungroup()
+
+#to create a multiple linear model
+all_lm_sc <- model_data_sc %>%
+  dplyr::select(log2_CV2_t, ATATTC, TGTAAATA, TGCAT, TTTTTTA) %>%
+    lm(data = ., 
+       log2_CV2_t ~ ATATTC + TGTAAATA + TGCAT + TTTTTTA)
+
+```
+
+
+#Set up Model Matrices for glmnets
+
+```{R glmnet matrices}
+
+#sun et al
+motifs_matrix_s_dr <- model_data_s_dr %>%
+    dplyr::select(-geneName, -log2_hlife) %>%
+      sapply(., strtoi)%>%
+        data.matrix()
+
+#Chan et al
+motifs_matrix_k_dr <- model_data_k_dr %>%
+    dplyr::select(-geneName, -log2_hlife) %>%
+      sapply(., strtoi)%>%
+        data.matrix()
+
+#single cell data
+motifs_matrix_sc <- model_data_sc %>%
+  select(-geneName, -log2_CV2_t, -mean_t) %>%
+    sapply(., strtoi)%>%
+      data.matrix()
+```
+
+
+```{Performing Glmnet on Sun et al 2013}
+
+#Cross Validated Glmnet to get lambda.min for extracting coeffs 
+cv_glm_s_dr <- cv.glmnet(x = motifs_matrix_s_dr, 
+                         y = model_data_s_dr$log2_hlife,
+                         nfolds = 100)
+
+#visualize MSE vs log(lambda plot) for CV glmnet
+plot(cv_glm_s_dr, sub = "DATA: Sun et al. 2013 ")
+
+
+```
+
+```{Performing Glmnet on Chan et al 2018}
+
+#Cross Validated Glmnet to get lambda.min for extracting coeffs 
+cv_glm_k_dr <- cv.glmnet(x = motifs_matrix_k_dr, 
+                         y = model_data_k_dr$log2_hlife,
+                         nfolds = 100)
+
+#visualize MSE vs log(lambda plot) for CV glmnet
+plot(cv_glm_k_dr, sub = "DATA: Chan et al. 2018 ")
+
+
+```
+
+```{Performing Glmnet on single cell Data}
+
+#Cross Validated Glmnet to get lambda.min for extracting coeffs 
+cv_glm_sc <- cv.glmnet(x = motifs_matrix_sc, 
+                       y = model_data_sc$log2_CV2_t,
+                       nfolds = 100)
+
+#visualize MSE vs log(lambda plot) for CV glmnet
+plot(cv_glm_sc, sub = "DATA: Nadal-Ribelles et al. 2019 ")
+
+```
+
+```{Get Glmnet Motifs, coefs and plot -all}
+
+##sun et al
+#save coefficients from cv.glmnet
+coefs_s_dr <- data.matrix(coef(cv_glm_s_dr, s = "lambda.min"))
+
+#Create a tibble of coefficients ordered by absolute value
+sig_glms_s_dr <- tibble(
+      motif_glmnet = rownames(coefs_s_dr)[coefs_s_dr != 0],
+      coeff_glmnet = coefs_s_dr[coefs_s_dr != 0]
+    ) %>%
+        arrange(desc(abs(coeff_glmnet))) %>%
+          filter(motif_glmnet != "(Intercept)")
+
+#perform multiple lm to get error values  
+lm_motifs_s_dr <- lm(data = model_data_s_dr, 
+                     paste("log2_hlife", 
+                           paste(sig_glms_s_dr$motif_glmnet, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+#tidy this data
+tidy_lm_s_dr <- lm_motifs_s_dr %>%
+  broom::tidy() %>%
+    #perform FDR correction for p-values
+    mutate(p_adj_fdr = p.adjust(p.value, method = "fdr")) %>%
+      #filter intercept motifs
+      filter(term != "(Intercept)")%>%
+        select(term, estimate, std.error, p_adj_fdr) %>%
+          mutate(term = str_sub(term, 1, -2)) 
+
+
+tidy_lm_s_dr %>% filter(p_adj_fdr < 0.05) %>% 
+  ggplot(aes(x = term, y = estimate)) + 
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate - std.error, 
+                      ymax = estimate + std.error),
+                  width = 0.2) +
+    #geom_errorbarh(aes(xmin = x-SEx,xmax = x+SEx,height=.00)) +
+    scale_y_continuous(limits = c(-1, NA)) +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80"),
+          axis.text.x=element_text(angle = 45, hjust = 1)) +
+    labs(y = "coefficient", 
+         x = element_blank(), 
+         title = "coefficients vs motifs for Sun et al")
+
+    
+
+##------Repeat for Chan et al data------------------
+
+#save coefficients from cv.glmnet
+coefs_k_dr <- data.matrix(coef(cv_glm_k_dr, s = "lambda.min"))
+
+#Create a tibble of coefficients ordered by absolute value
+sig_glms_k_dr <- tibble(
+      motif_glmnet = rownames(coefs_k_dr)[coefs_k_dr != 0],
+      coeff_glmnet = coefs_k_dr[coefs_k_dr != 0]
+    ) %>%
+        arrange(desc(abs(coeff_glmnet))) %>%
+          filter(motif_glmnet != "(Intercept)")
+
+#perform multiple lm to get error values  
+lm_motifs_k_dr <- lm(data = model_data_k_dr, 
+                     paste("log2_hlife", 
+                           paste(sig_glms_k_dr$motif_glmnet, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+#tidy this data
+tidy_lm_k_dr <- lm_motifs_k_dr %>%
+  broom::tidy() %>%
+    #perform FDR correction for p-values
+    mutate(p_adj_fdr = p.adjust(p.value, method = "fdr")) %>%
+      #filter intercept motifs
+      filter(term != "(Intercept)")%>%
+        select(term, estimate, std.error, p_adj_fdr) %>%
+          mutate(term = str_sub(term, 1, -2))
+
+tidy_lm_k_dr %>% filter(p_adj_fdr < 0.05) %>% 
+  ggplot(aes(x = term, y = estimate)) + 
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate - std.error, 
+                      ymax = estimate + std.error),
+                  width = 0.2) +
+    scale_y_continuous(limits = c(-1, NA)) +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80"),
+          axis.text.x=element_text(angle = 45, hjust = 1)) +
+    labs(y = "coefficient", 
+         x = element_blank(), 
+         title = "coefficients vs motifs for Chan et al")
+
+
+##------------For scRNA data--------------
+#save coefficients from cv.glmnet
+coefs_sc <- data.matrix(coef(cv_glm_sc, s = "lambda.min"))
+
+#Create a tibble of coefficients ordered by absolute value
+sig_glms_sc <- tibble(
+      motif_glmnet = rownames(coefs_sc)[coefs_sc != 0],
+      coeff_glmnet = coefs_sc[coefs_sc != 0]
+    ) %>%
+        arrange(desc(abs(coeff_glmnet))) %>%
+          filter(motif_glmnet != "(Intercept)")
+
+#perform multiple lm to get error values  
+lm_motifs_sc <- lm(data = model_data_sc, 
+                     paste("log2_CV2_t", 
+                           paste(sig_glms_sc$motif_glmnet, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+#tidy this data
+tidy_lm_sc <- lm_motifs_sc %>%
+  broom::tidy() %>%
+    #perform FDR correction for p-values
+    mutate(p_adj_fdr = p.adjust(p.value, method = "fdr")) %>%
+      #filter intercept motifs
+      filter(term != "(Intercept)")%>%
+        select(term, estimate, std.error, p_adj_fdr) %>%
+          mutate(term = str_sub(term, 1, -2))
+
+tidy_lm_sc %>% filter(p_adj_fdr < 0.05) %>% 
+  ggplot(aes(x = term, y = estimate)) + 
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate - std.error, 
+                      ymax = estimate + std.error),
+                  width = 0.2) +
+    #geom_errorbarh(aes(xmin = x-SEx,xmax = x+SEx,height=.00)) +
+    scale_y_continuous(limits = c(NA, NA)) +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80"),
+          axis.text.x=element_text(angle = 45, hjust = 1)) +
+    labs(y = "coefficient", 
+         x = element_blank(), 
+         title = "coefficients vs motifs for Nadal-Ribelles et al")
+
+```
+
+
+```{R SC and DR Combined, eval=FALSE, include=FALSE}
+com_sun_sc <- full_join(tidy_lm_s_dr, tidy_lm_sc, by = "term", suffix = c("_sun","_sc")) %>%
+  na.omit()
+
+full_join(tidy_lm_s_dr, tidy_lm_sc, by = "term", suffix = c("_sun","_sc")) %>% na.omit() %>%
+    filter(p_adj_fdr_sc < 0.05 && p_adj_fdr_sun < 0.05) %>% view()
+
+com_sun_sc %>% 
+  ggplot(aes(x = estimate_sun, y = estimate_sc)) + 
+    geom_point() +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80")) +
+    geom_errorbar(aes(ymin = estimate_sc - std.error_sc, 
+                      ymax = estimate_sc + std.error_sc)) + 
+    geom_errorbarh(aes(xmin = estimate_sun - std.error_sun, 
+                      xmax = estimate_sun + std.error_sun)) + 
+    scale_y_continuous(limits = c(-1.5, 1.5)) +
+    scale_x_continuous(limits = c(-1.5, 1.5))
+
+com_kar_sc <- full_join(tidy_lm_k_dr, tidy_lm_sc, by = "term", suffix = c("_kar","_sc")) %>%
+  na.omit()
+
+com_kar_sc %>% 
+  ggplot(aes(x = estimate_kar, y = estimate_sc)) + 
+    geom_point(col = colour["teal"]) +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80")) +
+    geom_errorbar(aes(ymin = estimate_sc - std.error_sc, 
+                      ymax = estimate_sc + std.error_sc),
+                  col = colour["teal"]) + 
+    geom_errorbarh(aes(xmin = estimate_kar - std.error_kar, 
+                      xmax = estimate_kar + std.error_kar),
+                  col = colour["teal"]) +
+    labs(x = "Coefficient Half-Life",
+         y = bquote(Coefficient~CV^2)) 
+
+com_glm_motifs %>% 
+  ggplot(aes(x = estimate_dr, y = estimate_sc, colour = source)) + 
+    geom_point() +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80")) +
+    geom_errorbar(aes(ymin = estimate_sc - std.error_sc, 
+                      ymax = estimate_sc + std.error_sc)) + 
+    geom_errorbarh(aes(xmin = estimate_dr - std.error_dr, 
+                      xmax = estimate_dr + std.error_dr)) +
+    labs(x = "Coefficient Half-Life",
+         y = bquote(Coefficient~CV^2)) +
+    scale_color_hue(labels = c("Chan et al.","Sun et al.")) +
+    scale_y_continuous(limits = c(-2.5, 2.5)) +
+    scale_x_continuous(limits = c(-2.5, 2.5))
+
+```
+
+
+```{R Combine glmnet motifs of dr & sc, eval=FALSE, include=FALSE}
+
+com_glm_motifs <- full_join(tidy_lm_s_dr, tidy_lm_k_dr, by = "term", suffix = c("_sun","_kar")) %>% 
+  gather(key = variable, value = value, -term) %>%
+  mutate(source = str_sub(variable, -3, -1)) %>%
+  mutate(variable = str_sub(variable, 1, -5)) %>%
+  spread(variable, value) %>%
+  full_join(., tidy_lm_sc, by = "term", suffix = c("_dr", "_sc")) %>%
+  filter(!is.na(source))
+
+com_glm_motifs %>% 
+  ggplot(aes(x = estimate_dr, y = estimate_sc, colour = source)) + 
+    geom_point() +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80")) +
+    geom_errorbar(aes(ymin = estimate_sc - std.error_sc, 
+                      ymax = estimate_sc + std.error_sc)) + 
+    geom_errorbarh(aes(xmin = estimate_dr - std.error_dr, 
+                      xmax = estimate_dr + std.error_dr)) +
+    labs(x = "Coefficient Half-Life",
+         y = bquote(Coefficient~CV^2)) +
+    scale_color_hue(labels = c("Chan et al.","Sun et al.")) +
+    scale_y_continuous(limits = c(-2.5, 2.5)) +
+    scale_x_continuous(limits = c(-2.5, 2.5))
+  
+sig_motifs <- com_glm_motifs %>%
+  filter_at(vars(starts_with("p_adj_fdr_")), 
+            all_vars(. <= 0.05 || is.na))
+  
+shared_motifs <- com_glm_motifs %>%
+  filter_at(vars(-term), all_vars(!is.na(.))) 
+```
+
+
+#For Gene Ontology
+Create a list of genes containing each motifs. 
+This code writes the output to file and is set to not run by default 
+
+```{R Listing Genes, eval=FALSE, include=FALSE}
+genes_l_s_dr <- list()
+#sig_motifs is the list of motifs without intercept
+for (each_m in sig_glms_s_dr$motif_glmnet)
+  {
+  #add all geneName values with 1 for each motif to a list of vectors
+  genes_l_s_dr[[each_m]] <- filter(.data = model_data_s_dr, 
+                           !!as.name(each_m) == 1)$geneName
+
+  write(x = genes_l_s_dr[[each_m]], 
+        file = paste0("data/motifs_fun/", each_m, ".txt"))
+  }
+
+#cleanup
+remove(each_m)
+```
+

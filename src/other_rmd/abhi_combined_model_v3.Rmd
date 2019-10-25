@@ -1,0 +1,426 @@
+---
+title: "Codon Usage"
+author: "Abhishek Jain"
+date: "16th July 2019"
+output: 
+  md_document:
+    variant: markdown_github
+editor_options:
+  chunk_output_type: console
+---
+
+## Initation:
+
+```{R Setup}
+## Data exploration
+
+if(!require(tidyverse)){
+    install.packages("tidyverse")
+    library(tidyverse)
+}
+if(!require(glmnet)){
+    install.packages("glmnet")
+    library(glmnet)
+}
+if(!require(lmodel2)){
+    install.packages("lmodel2")
+    library(lmodel2)
+}
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    library(tidyverse)
+}
+
+#theme for ggplot  
+  theme_coding <- function(...){
+  theme_bw()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid = element_blank(),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), units = , "cm"),
+        plot.title = element_text(size = 20, vjust = 1, hjust = 0.5),
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.position = c(0.9, 0.9))
+}
+
+#titles function incomplete
+  x_y_titles <- function(){
+    
+    
+  }
+ 
+#defining fun color for scheming
+colour <- c(teal = "#237E8A", green = "#1A8A21", red = "#A62621")
+
+```
+
+Important: DR Data used here is karsten weiss only.
+
+```{R Load Data}
+
+#get reference UTRs and CDS sequences from Cheng et al Suppl.
+ref_raw <- read_rds("data/Sun_mutation_UTRs.rds")
+  #Get sequences from ref_raw in a separate vector
+  cds_seq <- ref_raw$CDS_seq
+  
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("data/list_motifs.txt", character())
+
+#load list of 12 Chimeric Terminator Genes  
+list_genes <- scan("data/genes_terminators_list.txt", character())
+
+#manual Cheng motifs list
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+#this is new karsten/Chan et al 2018 data
+  dr_raw <- read_tsv("data/new_karsten_dr_data.txt")
+
+#For codon usage, get a list of codons
+  codons_raw <- scan("data/codons.txt", character())
+  
+#single cell variability data from Nadal Ribelles et al   
+  #sc_raw <-read_tsv("data/YPD_scRNA.tab")
+```
+
+```{R clean data}
+
+#create a vector of 3'UTRs for searching motifs later 
+UTR_3 <- ref_raw$UTR3_seq
+
+#create a dataframe with codon usage for each gene
+ref_codons_freq <- ref_raw %>%
+  select(genename, CDS_seq, TTT:GGG) %>%
+    rename(geneName = genename)
+
+#Calculate proportional codon usage for each transcript & remove one 
+#codon accounting for collinearity
+  #NOTE: the order of codons (columns) gets flipped
+ref_codons <- ref_codons_freq %>%
+  gather(key = "codon", value = "freq", TTT:GGG) %>%
+    mutate(freq = freq/nchar(CDS_seq)) %>%
+  spread(codon, freq) %>%
+    select(-TTT, -CDS_seq) 
+
+codons <- colnames(ref_codons[-1])
+
+#change colnames, add means and filter missing values 
+dr_raw2 <- dr_raw %>%
+  rename_all(~c("geneName","comgeneName","hlife_r1","hlife_r2")) %>%
+    mutate(hlife = rowMeans(cbind(hlife_r1, hlife_r2), na.rm = TRUE)) %>% 
+      filter(is.finite(hlife)) 
+
+#cleaner df
+dr_data <- dr_raw2 %>%
+          dplyr::select(geneName, comgeneName, hlife)
+  
+```
+
+Calculate 3'UTR Motif Frequencies from 3'UTR Ref sequences
+```{R motif search}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs_regex <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+motifs_regex <- c(motifs_regex,
+                  "^(TTTTTTA)|([^T]TTTTTTA$)|([^T]TTTTTTA([^AT]))|(GTTTTTTA(A|T|G|C))")
+
+motifs_raw <- c(motifs_raw, "T6A_NOT_HUUUUUUHW")
+
+#Initate ref tibble and store gene names
+ref_motifs_raw2 <- tibble(geneName = ref_raw$genename)
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs_regex)){
+ref_motifs_raw2 <- mutate(.data = ref_motifs_raw2, 
+                      !!motifs_raw[i] := str_count(UTR_3, motifs_regex[i]))
+}
+
+#add T6A inside HUUUUUUHW, then remove total T6As
+ref_motifs_raw <- ref_motifs_raw2 %>%
+  mutate(T6A_IN_HUUUUUUHW = TTTTTTA - T6A_NOT_HUUUUUUHW) %>%
+  select(-TTTTTTA)
+
+
+  
+motifs_raw <- motifs_raw[-match("TTTTTTA", motifs_raw)]
+
+motifs_present <- colnames(ref_motifs_raw)[sapply(ref_motifs_raw[-1], sum) > 1][-1]
+
+ref_motifs <-  ref_motifs_raw %>% 
+  select_at(vars(geneName, motifs_present))
+  
+
+```
+
+combine 
+```{R Create model datasets}
+
+#model df containing motifs and log2(hlife)
+model_motifs <- left_join(ref_motifs, dr_data, by = "geneName") %>% 
+    filter(is.finite(hlife)) %>% 
+      #log transform hlife and remove
+      mutate(log2_hlife = log2(hlife)) %>% select(-hlife) %>%
+        #reorder columns
+        select(geneName, comgeneName, log2_hlife, everything()) #%>%
+            #convert motifs data into binary and as factors
+            #mutate_at(vars(motifs_present), list(~ replace(., .>= 1, 1) )) %>%
+            #mutate_at(vars(motifs_present), list(~ factor(.) ))
+
+#model df containing codon usage and and log2(hlife)
+model_codons <- left_join(ref_codons, dr_data, by = "geneName") %>% 
+    filter(is.finite(hlife)) %>% 
+      #log transform hlife and remove original
+      mutate(log2_hlife = log2(hlife)) %>% select(-hlife) %>%
+        #reorder columns
+        select(geneName, comgeneName, log2_hlife, everything())
+
+#combine the two models
+model_combined <- left_join(model_motifs, model_codons, 
+                            by = c("geneName", "comgeneName", "log2_hlife"))
+
+#model for selected genes
+model_sel_genes <- model_combined %>%
+  filter(geneName %in% list_genes)
+
+#Create a subset of model by taking out selected genes
+
+  #creates an operator for Not %in%
+  '%!in%' <- function(x,y)!('%in%'(x,y))
+  
+    model_com_sub <- model_combined %>%
+      filter(geneName %!in% list_genes)
+    
+```
+
+
+```{R Linear Modelling}
+
+predictors <- paste(c(paste(codons, collapse = " + "),
+                  paste(motifs_present, collapse = " + ")), 
+                collapse = " + ")
+
+lm_codons_dr <- model_codons %>%
+    filter(geneName %!in% list_genes) %>%
+      select(-geneName, -comgeneName) %>%
+        lm(data = ., paste("log2_hlife", 
+                           paste(codons, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+
+lm_motifs_dr <- model_motifs %>%
+    filter(geneName %!in% list_genes) %>%
+      select(-geneName, -comgeneName) %>%
+        lm(data = ., paste("log2_hlife", 
+                           paste(motifs_present, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+lm_combined_dr <- lm(data = model_com_sub, paste("log2_hlife", predictors, sep = " ~ "))
+
+lm_step <- step(lm_combined_dr, 
+                scope = list(upper = lm_combined_dr, lower = lm_codons_dr),
+                trace = FALSE)
+
+#Create a list of motifs selected by step_lm
+motifs_sel <- names(coef(lm_step))[nchar(names(coef(lm_step))) > 3][-1]
+```
+
+```{R Prediction}
+pred_step <- model_sel_genes %>%
+  mutate(pred_hlife = predict(lm_step, 
+                              model_sel_genes))
+
+plot_predictions <- pred_step %>%
+  ggplot(aes(x = log2_hlife, y = pred_hlife, col = paste(geneName, " (", comgeneName, ")"))) +
+    geom_point() + 
+    scale_x_continuous(limits = c(0, 5)) + 
+    scale_y_continuous(limits = c(0, 5)) + 
+    geom_abline() + geom_text(aes(label = comgeneName), size = 3, vjust = 0, nudge_y = 0.1, angle = 45) + 
+#    theme_coding() + 
+    labs(y = "Predicted log2 (Hlife)", 
+         x = "Measured log2 (Hlife)",
+         colour = "geneID (geneName)",
+         title = "Predicted vs Measured Half-life for 10 genes")
+
+#display the plot
+plot_predictions
+
+#this is a cleaner, rearranged df just for tabular comparison
+pred_motifs_sel <- pred_step %>% 
+  select(geneName, comgeneName, log2_hlife, pred_hlife, motifs_sel)
+
+
+```
+
+
+
+```{R Motif Mutants}
+lm_estimates <- lm_step %>%
+  broom::tidy() %>%
+    filter(term != "(Intercept)" & nchar(term) > 3) %>%
+    select(motif = term, estimate)
+
+#create list of stability and decay motifs by using estimates from lm_step
+stbl_motifs <- lm_estimates %>% filter(estimate > 0)
+
+decay_motifs <- lm_estimates %>% filter(estimate < 0)
+
+#create a predicted df with less stable genes (setting stable motifs to 0)
+model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(stbl_motifs$motif, function(x){return(0)}) %>% 
+      mutate(pred_stbl0 = predict(lm_step, .)) %>%
+        select(comgeneName, pred_stbl0) 
+
+#Now set decay motifs to 0
+model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(decay_motifs$motif, function(x){return(0)}) %>% 
+      mutate(pred_decay0 = predict(lm_step, .)) %>%
+        select(comgeneName, pred_decay0) 
+
+#Now set decay motifs to 0, and stability motifs to 1
+model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(decay_motifs$motif, function(x){return(0)}) %>%
+    mutate_at(stbl_motifs$motif[stbl_motifs$motif %in% motifs_present_sel], 
+              function(x){return(as.factor(1))}) %>%
+      mutate(pred_dec0_stbl1 = predict(lm_step, .)) %>%
+        select(comgeneName, pred_dec0_stbl1) 
+
+#Now set decay motifs to 1, and stability motifs to 0
+model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(decay_motifs$motif[decay_motifs$motif %in% motifs_present_sel], function(x){return(as.factor(1))}) %>%
+    mutate_at(stbl_motifs$motif, function(x){return(0)}) %>%
+      mutate(pred_dec1_stbl0 = predict(lm_step, .)) %>%
+        select(comgeneName, pred_dec1_stbl0) 
+
+
+motifs_present_sel <- names(which(sapply(pred_motifs_sel[-c(1:4)], 
+                                         function(x){sum(strtoi(x))})
+                                  > 0))
+
+```
+
+
+```{R test3}
+
+#create a predicted df of just codons (setting motifs to 0)
+sel_motifs0 <- model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(motifs_sel, function(x){return(0)}) %>% 
+      mutate(pred_codons = predict(lm_step, .)) %>%
+        select(comgeneName, pred_codons) 
+
+#create a predicted df of just motifs (setting codons to 0)
+sel_codons0 <- model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(codons, function(x){return(0)}) %>% 
+      mutate(pred_motifs = predict(lm_step, .)) %>%
+        select(comgeneName, pred_motifs)
+
+left_join(sel_motifs0, sel_codons0, by = "comgeneName") %>%
+  mutate(intercept = lm_step$coefficients[1]) %>% 
+    mutate(pred_codons = pred_codons - intercept) %>%
+    mutate(pred_motifs = pred_motifs - intercept) %>%
+    mutate(intercept = lm_step$coefficients[1]) %>%
+    mutate(pred_overall = pred_codons + pred_motifs)
+
+
+
+```
+
+```{R Test_Combinations}
+CDS_data_sel <- pred_step %>%
+  select(CDS_geneName = geneName, CDS_comgeneName = comgeneName, codons) %>%
+    mutate(X = "a")
+
+UTRs_names <- pred_motifs_sel %>%
+  select(-log2_hlife, UTR_geneName = geneName, UTR_comgeneName = comgeneName, OG_pred_hlife = pred_hlife) %>%
+  mutate(X = "a")
+
+CDS_UTRs_coms <- CDS_data_sel %>% 
+  group_by(CDS_geneName) %>% 
+    left_join(., UTRs_names, by = "X") %>%
+  ungroup() %>%
+  select(-X) %>% 
+  mutate(pred_hlife = predict(lm_step, .)) %>% 
+  select(CDS_geneName, CDS_comgeneName, OG_pred_hlife, UTR_geneName, UTR_comgeneName, pred_hlife)
+
+#CDS_UTRs_coms %>% 
+  #left_join(., model_sel_genes[,c(1,3)], by = c("CDS_geneName" = "geneName")) 
+
+CDS_UTRs_coms %>% 
+  left_join(., model_sel_genes[,c(1,3)], by = c("CDS_geneName" = "geneName")) %>% 
+  group_by(CDS_geneName) %>% filter(pred_hlife == max(pred_hlife) | pred_hlife == min(pred_hlife)) %>% ungroup() %>% View()
+
+
+```
+
+```{R Build your own UTR}
+test_df <- model_sel_genes %>%
+  select(comgeneName, motifs_sel, codons) %>%
+    mutate_at(motifs_sel, function(x){return(as.factor(0))})
+```
+
+
+```{R TTTTTTA within HUUUUUUHW}
+str_count(UTR_3, "GTTTTTTA(G|C)") %>% sum
+str_count(UTR_3, "TTTTTTA") %>% sum
+
+str_count(UTR_3, "(A|C|T)TTTTTT(A|C|T)(A|T)") %>% sum()
+str_count(UTR_3, "(A|C|T)TTTTTTA(A|T)") %>% sum
+str_count(UTR_3, "(A|C|T|G)TTTTTTA(A|T|G|C)") %>% sum
+
+str_extract(UTR_3, "(A|C|T|G)TTTTTTA(A|T|G|C)")
+
+notHU <- c("GTTTTTTA(A|T)", "(A|C|T)TTTTTTA(G|C)", "(G)TTTTTTA(G|C)")
+for (i in 1:length(notHU)){
+ref_motifs_raw2 <- mutate(.data = ref_motifs_raw, 
+                      !!notHU[i] := str_count(UTR_3, notHU[i]))
+}
+
+```
+
+```{R regrex test}
+
+find <- function(x) {
+  #myseq <- "TGCTTTTTTATTTTTTTATCC"
+  
+  # <- "ATTTTTTAACCTTCCGTTCTGATATCACATGTATAATAGTAATGAATTTTTTTTACTTTTTTTTTTTTTTAGTAAATATTCTAGCATATGAGTTTATGCTTTCATTTATTTAACGTTCTGCACTTTTGTTTTTGCTGGC"
+  #myseq = "TAGTTATCATGTTTCTTATCCCCTCCACTGTAAAGTAAATGTATATTATTAAAAGGCAAAAATAAGAATATAATACTTCAGTAATGAGCCTTTTTTATTCGGTCTTGTTACTTCTTTTTTACTTC"
+  #myseq = "ATTTTACTTCACGCTACTGATATTTTAAAACATTTTATTGTTACTAGTGACCTGGTAAAAATATTTACAAGTATAAAAGGACCAATTTACTGAATGAAGTAAATAAGGATCATTGATATGTTACGATAAATAATGCAAAGTAAAGGAGAAGAAACGAAGGGGTCCAAACCTTAGTAGGTTAGCTTTCTATAAACTTTGACAGGCTTTATATCCTTACAAAATGCACTTTTTTCATACTTTTTTGTTAGAGTATGTCTTGGCCCTAAAGTGAATTTAGAGTTTTTTAGATTTCAAGGCTACGATAGTAGCCTTATAACAATTTCCCATGTACC"
+  
+  #YDL160C
+  #myseq = "AGAATATCTAAGAAAAAATAACTACTGTGGTGAGATACGCTTTTTTTGTGATCTAATCGTCGATTATTTTTATCTTTTTTCAAATCTCCATTGTGAATTACATTACTTTGTAACCATACTTTTACTATTGATTTTGAACAAGAATCAGTCGTAATTTAATTTTTGTCTCTGCTTTTTTATTTTTTTATCCGTTTTCTCTAGTTTCTGTGCTGATTTTTTTATCCTCATTTGCGCACCGTTTTTATTACTATCACTTTGTTATTTCTTTTTGTTTCTCTAAAATTATCTCAAACCACTTCATTCTTTTACCAGTCATTGTTGTAACCAATACTACCGTCCATATCAAGAGCTCAAGTGCACTTGCCCAGTTTCATCGACACTTTCGCTTTTAGCTAACTTTTATTGTTATAATTTCCACAATAAACTATTCATTTCAACTGAC"
+  
+  #YNL154C
+
+  myseq = "AATAGAAAACGGAGGAGGTTTTTTGTAATCATTCCCACCACCGTCCAGTGATCTTCACATTTTGTTCTAGTATTATGATTTTGATGTACATTTGATATTTTTTTATGTTTTTTATTTAAAAAGTAAGGGCGAAAATGTCTATTATTAAAAAAATATTAAGTACTTTACGTGCTTTTTAATATCGTTTTTTATTGATTATGTATCTTTAATGGGTTATTGATTTTTTTTG"
+  
+  print(paste("Length:",nchar(myseq),"  ","Count:", str_count(myseq, x)))
+  print(str_locate_all(myseq, x)[[1]])
+  str_extract_all(myseq, x)[[1]]
+  #print(paste("Count:", str_count(myseq, x)))
+}
+
+#find("(GTTTTTTA)|(TTTTTTAC)|(TTTTTTA$)|(^TTTTTTA)|((A|C|T)TTTTTTA(A|T))")
+#find("(TTTTTTA$)|(^TTTTTTA)|((A|C|T)TTTTTTA(A|T))")
+
+#T6A_but_HUW
+#find("^TTTTTTA|GTTTTTTA|TTTTTTAC|TTTTTTAG|GTTTTTTTA|TTTTTTA$")
+find("^(TTTTTTA)|([^T]TTTTTTA$)|([^T]TTTTTTA([^AT]))|(GTTTTTTA(A|T|G|C))")
+
+#T6A_only_in_HUW
+find("((A|C|T)TTTTTTA(A|T))|((A|T|C)TTTTTTTA)")
+
+#ALL HUW
+find("(A|C|T)TTTTTT(A|C|T)(A|T)")
+
+#ALL T6A
+find("TTTTTTA")
+```

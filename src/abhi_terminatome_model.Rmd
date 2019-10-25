@@ -1,0 +1,503 @@
+---
+title: "abhi terminatome data"
+author: "Abhishek Jain"
+date: "30/07/2019"
+output: 
+  md_document:
+    variant: markdown_github
+editor_options:
+  chunk_output_type: console
+---
+
+#Updates: 
+
+## Initation:
+```{R Setup}
+## Data exploration
+
+if(!require(tidyverse)){
+    install.packages("tidyverse")
+    library(tidyverse)
+}
+if(!require(glmnet)){
+    install.packages("glmnet")
+    library(glmnet)
+}
+if(!require(lmodel2)){
+    install.packages("lmodel2")
+    library(lmodel2)
+}
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    library(tidyverse)
+}
+if(!require(readxl)){
+    install.packages("readxl")
+    library(readxl)
+}
+#theme for ggplot  
+  theme_coding <- function(...){
+  theme_bw()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid = element_blank(),
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), units = , "cm"),
+        plot.title = element_text(size = 20, vjust = 1, hjust = 0.5),
+        legend.text = element_text(size = 12),
+        legend.title = element_blank(),
+        legend.position = c(0.9, 0.9))
+}
+
+#titles function incomplete
+  x_y_titles <- function(){
+    
+    
+  }
+ 
+#defining fun color for scheming
+colour <- c(teal = "#237E8A", green = "#1A8A21", red = "#A62621")
+
+```
+
+Important: DR Data used here is karsten weiss only.
+
+```{R Load Data}
+
+#get reference UTRs and CDS sequences from Cheng et al Suppl.
+ref_raw <- read_rds("data/Sun_mutation_UTRs.rds")
+  #Get sequences from ref_raw in a separate vector
+  cds_seq <- ref_raw$CDS_seq
+  
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("data/list_motifs.txt", character())
+motifs_raw <- c(motifs_raw, "HUUUUUUHW")
+
+#load list of 12 Chimeric Terminator Genes  
+list_genes <- scan("data/genes_terminators_list.txt", character())
+
+#manual Cheng motifs list
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+#this is new karsten/Chan et al 2018 data
+  dr_raw <- read_tsv("data/new_karsten_dr_data.txt")
+
+#For codon usage, get a list of codons
+  codons_raw <- scan("data/codons.txt", character())
+  
+#single cell variability data from Nadal Ribelles et al   
+  #sc_raw <-read_tsv("data/YPD_scRNA.tab")
+  
+FI_data <- readxl::read_xls("data/terminatome.xls", skip = 1, range = "A3:C5304", col_names = c("geneName","comgeneName", "rel_FI"))
+
+#load single cell protein data
+sc_pro_mean <- read_xls("data/sc_proteome_chong.xls", 
+                        sheet = 1, 
+                        skip = 3, 
+                        range = "A6:E4149",
+                        col_names = c("geneName", 
+                                      "comgeneName",
+                                      "WT1","WT2","WT3")) %>% 
+  type_convert()
+
+#load ho et al 2018 unified protein dataset
+unified_pr_data <- readxl::read_xlsx("data/Ho_2018_unified_protein.xlsx", skip = 2, range = "A4:D5861", col_names = c("geneName","comgeneName", "qualifier","mols_per_cell")) %>% select(-qualifier) %>% filter(is.finite(mols_per_cell))
+
+```
+
+```{R clean data}
+#create a vector of 3'UTRs for searching motifs later 
+UTR_3 <- ref_raw$UTR3_seq
+
+#create a dataframe with codon usage for each gene
+ref_codons_freq <- ref_raw %>%
+  select(genename, CDS_seq, TTT:GGG) %>%
+    rename(geneName = genename)
+
+#Calculate proportional codon usage for each transcript & remove one 
+#codon accounting for collinearity
+  #NOTE: the order of codons (columns) gets flipped
+ref_codons <- ref_codons_freq %>%
+  gather(key = "codon", value = "freq", TTT:GGG) %>%
+    mutate(freq = freq/nchar(CDS_seq)) %>%
+  spread(codon, freq) %>%
+    select(-TTT, -CDS_seq) 
+
+codons <- colnames(ref_codons[-1])
+
+#change colnames, add means and filter missing values 
+dr_raw2 <- dr_raw %>%
+  rename_all(~c("geneName","comgeneName","hlife_r1","hlife_r2")) %>%
+    mutate(hlife = rowMeans(cbind(hlife_r1, hlife_r2), na.rm = TRUE)) %>% 
+      filter(is.finite(hlife)) 
+
+#cleaner df
+dr_data <- dr_raw2 %>%
+          dplyr::select(geneName, comgeneName, hlife)
+  
+```
+
+Calculate 3'UTR Motif Frequencies from 3'UTR Ref sequences
+```{R motif search}
+
+#Dictionary for non-specific codes and converting U to T
+motifs_regex <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs_raw <- tibble(geneName = ref_raw$genename)
+    
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs_regex)){
+ref_motifs_raw <- mutate(.data = ref_motifs_raw, 
+                      !!motifs_raw[i] := str_count(UTR_3, motifs_regex[i]))
+}
+
+motifs_present <- motifs_raw[sapply(ref_motifs_raw[-1], sum) >= 5]
+
+ref_motifs <-  ref_motifs_raw %>% 
+  select_at(vars(geneName, motifs_present))
+  
+
+```
+
+combine 
+```{R Create model datasets}
+
+#model df containing motifs and log2(hlife)
+model_motifs <- left_join(ref_motifs, dr_data, by = "geneName") %>% 
+    filter(is.finite(hlife)) %>% 
+      #log transform hlife and remove
+      mutate(log2_hlife = log2(hlife)) %>% select(-hlife) %>%
+        #reorder columns
+        select(geneName, comgeneName, log2_hlife, everything())
+
+#model df containing codon usage and and log2(hlife)
+model_codons <- left_join(ref_codons, dr_data, by = "geneName") %>% 
+    filter(is.finite(hlife)) %>% 
+      #log transform hlife and remove original
+      mutate(log2_hlife = log2(hlife)) %>% select(-hlife) %>%
+        #reorder columns
+        select(geneName, comgeneName, log2_hlife, everything())
+
+#combine the two models
+model_combined <- left_join(model_motifs, model_codons, 
+                            by = c("geneName", "comgeneName", "log2_hlife"))
+
+
+#create model dataset for rel_FI data
+model_FI <- left_join(model_motifs, FI_data, by = c("geneName", "comgeneName")) %>% 
+  filter(is.finite(rel_FI))
+
+model_unified_pr <- left_join(model_combined, unified_pr_data, by = c("geneName", "comgeneName")) %>% 
+  filter(is.finite(mols_per_cell))    
+
+```
+
+
+```{R Linear Modelling}
+predictors <- paste(c(paste(codons, collapse = " + "),
+                  paste(motifs_present, collapse = " + ")), 
+                collapse = " + ")
+
+lm_motifs_dr <- lm(data = model_motifs, paste("log2_hlife",
+                                              paste(motifs_present,
+                                                    collapse = " + "),
+                                              sep = " ~ "))
+
+lm_codons_dr <- model_codons %>%
+      select(-geneName, -comgeneName) %>%
+        lm(data = ., paste("log2_hlife", 
+                           paste(codons, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+lm_combined_dr <- lm(data = model_combined, paste("log2_hlife", predictors, sep = " ~ "))
+
+lm_step_dr <- step(lm_combined_dr, 
+                scope = list(upper = lm_combined_dr, lower = lm_codons_dr),
+                trace = FALSE)
+
+#Create a list of motifs selected by step_lm
+motifs_sel <- names(coef(lm_step_dr))[nchar(names(coef(lm_step_dr))) > 3][-1]
+```
+
+```{R Predict FI with Motifs}
+predictors_FI <- paste(motifs_present, collapse = " + ")
+
+lm_motifs_FI <- lm(data = model_FI, paste("rel_FI",
+                                              predictors_FI,
+                                              sep = " ~ "))
+
+lm_cheng_FI <- lm(data = model_FI, paste("rel_FI",
+                                              paste(motifs_cheng,
+                                                    collapse = " + "),
+                                              sep = " ~ "))
+
+lm_step_FI <- step(lm_motifs_FI, 
+                scope = list(upper = lm_motifs_FI),
+                trace = FALSE)
+
+lm_step_FI %>% broom::tidy() %>% view()
+
+#motifs selected by step for FI
+names(coef(lm_step_FI))[nchar(names(coef(lm_step_FI))) > 3][-1]
+
+```
+
+
+```{Predict Unified Protein' Mols Per Cell with Motifs}
+predictors_codons <- paste(codons, collapse = " + ")
+
+lm_motifs_unif <- lm(data = model_unified_pr, paste("log(mols_per_cell)",
+                                              predictors_FI,
+                                              sep = " ~ "))
+
+lm_codons_unif <- lm(data = model_unified_pr, paste("log(mols_per_cell)",
+                                              paste(codons,
+                                                    collapse = " + "),
+                                              sep = " ~ "))
+
+lm_combined_unif <- lm(data = model_unified_pr, paste("log(mols_per_cell)",
+                                              paste(predictors,
+                                                    collapse = " + "),
+                                              sep = " ~ "))
+
+lm_step_unif <- step(lm_combined_unif, 
+                scope = list(upper = lm_combined_unif, lower = lm_codons_unif),
+                trace = FALSE)
+
+lm_step_unif %>% broom::tidy() %>% view()
+
+#motifs selected by step for FI
+names(coef(lm_step_unif))[nchar(names(coef(lm_step_unif))) > 3][-1]
+
+```
+
+
+```{R Plots for visualizing relFI vs mean scFI}
+model_combined %>% 
+  filter(WT1 > 0.0005) %>% 
+  ggplot(aes(x = rel_FI, y = WT1)) + geom_point()
+
+model_combined %>% filter(WT1 > (2^(-11))) %>%
+  lm(data = ., log2(WT1) ~ rel_FI) %>% plot()
+    summary()
+
+lm(data = model_FI, rel_FI ~ log2_hlife) %>% summary()
+
+```
+
+```{R Prediction}
+pred_step <- model_sel_genes %>%
+  mutate(pred_hlife = predict(lm_step, 
+                              model_sel_genes))
+
+pred_step_all <- model_combined %>%
+  mutate(pred_hlife = predict(lm_step, 
+                              model_combined)) %>%
+    select(geneName, comgeneName, log2_hlife, pred_hlife, everything())
+  
+  
+plot_predictions <- pred_step %>%
+  ggplot(aes(x = log2_hlife, y = pred_hlife, col = paste(geneName, " (", comgeneName, ")"))) +
+    geom_point() + 
+    scale_x_continuous(limits = c(0, 5)) + 
+    scale_y_continuous(limits = c(0, 5)) + 
+    geom_abline() + geom_text(aes(label = comgeneName), size = 3, vjust = 0, nudge_y = 0.1, angle = 45) + 
+#    theme_coding() + 
+    labs(y = "Predicted log2 (Hlife)", 
+         x = "Measured log2 (Hlife)",
+         colour = "geneID (geneName)",
+         title = "Predicted vs Measured Half-life for 10 genes")
+
+#display the plot
+plot_predictions
+
+#this is a cleaner, rearranged df just for tabular comparison
+pred_motifs_sel <- pred_step %>% 
+  select(geneName, comgeneName, log2_hlife, pred_hlife, motifs_sel)
+
+
+```
+
+
+
+```{R glmnet matrices}
+
+#Yamanishi FI data
+motifs_matrix_FI <- model_FI %>%
+    dplyr::select(-geneName, -comgeneName, -rel_FI, -log2_hlife) %>%
+      sapply(., strtoi)%>%
+        data.matrix()
+
+
+#karsten decay data
+motifs_matrix_dr <- model_motifs %>%
+  select(-geneName, -comgeneName, -log2_hlife) %>%
+    sapply(., strtoi)%>%
+      data.matrix()
+```
+
+
+```{Performing Glmnet on Both FI and DR}
+
+#Cross Validated Glmnet to get lambda.min for extracting coeffs 
+cv_glm_dr <- cv.glmnet(x = motifs_matrix_dr, 
+                         y = model_motifs$log2_hlife,
+                         nfolds = 100)
+
+#visualize MSE vs log(lambda plot) for CV glmnet
+plot(cv_glm_dr, sub = "DATA: Karsten et al. 2018 ")
+
+
+
+#Cross Validated Glmnet to get lambda.min for extracting coeffs 
+cv_glm_FI <- cv.glmnet(x = motifs_matrix_FI, 
+                         y = model_FI$rel_FI,
+                         nfolds = 100)
+
+#visualize MSE vs log(lambda plot) for CV glmnet
+plot(cv_glm_FI, sub = "DATA: Yamanishi et al. 2013 ")
+
+
+```
+
+
+```{R Getting coefficients/Motifs from glmnet for DR data}
+##karsten et al
+#save coefficients from cv.glmnet
+coefs_dr <- data.matrix(coef(cv_glm_dr, s = "lambda.min"))
+
+#Create a tibble of coefficients ordered by absolute value
+sig_glms_dr <- tibble(
+      motif_glmnet = rownames(coefs_dr)[coefs_dr != 0],
+      coeff_glmnet = coefs_dr[coefs_dr != 0]
+    ) %>%
+        arrange(desc(abs(coeff_glmnet))) %>%
+          filter(motif_glmnet != "(Intercept)")
+
+#perform multiple lm to get error values  
+lm_glmnet_motifs_dr <- lm(data = model_motifs, 
+                     paste("log2_hlife", 
+                           paste(sig_glms_dr$motif_glmnet, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+#tidy this data
+tidy_lm_dr <- lm_glmnet_motifs_dr %>%
+  broom::tidy() %>%
+    #perform FDR correction for p-values
+    mutate(p_adj_fdr = p.adjust(p.value, method = "fdr")) %>%
+      #filter intercept motifs
+      filter(term != "(Intercept)")%>%
+        select(term, estimate, std.error, p_adj_fdr)
+
+
+
+```
+
+```{R Getting Motifs from glmnet for FI data}
+##Yamanishsi et al
+#save coefficients from cv.glmnet
+coefs_FI <- data.matrix(coef(cv_glm_FI, s = "lambda.min"))
+
+#Create a tibble of coefficients ordered by absolute value
+sig_glms_FI <- tibble(
+      motif_glmnet = rownames(coefs_FI)[coefs_FI != 0],
+      coeff_glmnet = coefs_FI[coefs_FI != 0]
+    ) %>%
+        arrange(desc(abs(coeff_glmnet))) %>%
+          filter(motif_glmnet != "(Intercept)")
+
+#perform multiple lm to get error values  
+lm_glmnet_motifs_FI <- lm(data = model_FI, 
+                     paste("rel_FI", 
+                           paste(sig_glms_FI$motif_glmnet, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+#tidy this data
+tidy_lm_FI <- lm_glmnet_motifs_FI %>%
+  broom::tidy() %>%
+    #perform FDR correction for p-values
+    mutate(p_adj_fdr = p.adjust(p.value, method = "fdr")) %>%
+      #filter intercept motifs
+      filter(term != "(Intercept)")%>%
+        select(term, estimate, std.error, p_adj_fdr)
+
+
+
+```
+
+
+```{R LM of Union of Motifs from Kar and FI data}
+union_motifs_FI_kar <- rbind(tidy_lm_dr, tidy_lm_FI) %>% 
+  select(term) %>% 
+    unique() %>% 
+      .$term
+
+#Perform lm on both data for these motifs
+lm_union_motifs_dr <- lm(data = model_motifs, 
+                     paste("log2_hlife", 
+                           paste(union_motifs_FI_kar, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+lm_union_motifs_FI <- lm(data = model_FI, 
+                     paste("rel_FI", 
+                           paste(union_motifs_FI_kar, 
+                                 collapse = " + "),
+                           sep = " ~ "))
+
+union_both_estimates <- lm_union_motifs_dr %>% 
+  broom::tidy() %>%
+    left_join(., 
+              broom::tidy(lm_union_motifs_FI), 
+              by = "term", 
+              suffix = c("_dr","_FI")) %>% 
+      select(term, starts_with("est"), starts_with("std"), starts_with("p"))
+
+union_both_estimates %>% filter(term != "(Intercept)") %>%
+  ggplot(aes(x = estimate_FI, y = estimate_dr, col = term)) + 
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate_dr - std.error_dr, 
+                      ymax = estimate_dr + std.error_dr)) + 
+    geom_errorbarh(aes(xmin = estimate_FI - std.error_FI, 
+                      xmax = estimate_FI + std.error_FI)) + 
+    scale_y_continuous(limits = c(-1.5, 1.5)) +
+    scale_x_continuous(limits = c(-1.5, 1.5))
+```
+
+```{R Plots of glmnet motifs, eval=FALSE, include=FALSE}
+tidy_lm_dr %>% filter(p_adj_fdr < 0.05) %>% 
+  ggplot(aes(x = term, y = estimate)) + 
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate - std.error, 
+                      ymax = estimate + std.error),
+                  width = 0.2) +
+    #geom_errorbarh(aes(xmin = x-SEx,xmax = x+SEx,height=.00)) +
+    scale_y_continuous(limits = c(-1, NA)) +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80"),
+          axis.text.x=element_text(angle = 45, hjust = 1)) +
+    labs(y = "coefficient", 
+         x = element_blank(), 
+         title = "coefficients vs motifs for Karsten et al")
+
+  
+
+tidy_lm_FI %>% filter(p_adj_fdr < 0.05) %>% 
+  ggplot(aes(x = term, y = estimate)) + 
+    geom_point() +
+    geom_errorbar(aes(ymin = estimate - std.error, 
+                      ymax = estimate + std.error),
+                  width = 0.2) +
+    #geom_errorbarh(aes(xmin = x-SEx,xmax = x+SEx,height=.00)) +
+    scale_y_continuous(limits = c(-1, NA)) +
+    theme_coding() +
+    theme(panel.grid = element_line(colour = "grey80"),
+          axis.text.x=element_text(angle = 45, hjust = 1)) +
+    labs(y = "coefficient", 
+         x = element_blank(), 
+         title = "coefficients vs motifs for Karsten et al")
+```
