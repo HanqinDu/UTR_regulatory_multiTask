@@ -1,0 +1,42 @@
+---
+title: "Modify Gasch column"
+author: "Hanqin Du"
+date: "2019/10/23"
+output: html_document
+editor_options:
+  chunk_output_type: console
+---
+
+## Rstudio set up
+
+```{R set project folder}
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("..")
+getwd()
+```
+
+## Load library
+
+```{R Setup}
+library(tidyverse)
+
+```
+
+
+## change Gasch's data title names
+```{r load Gasch's data,modify the columns' names and save in a file}
+expressionLevel_Gasch <- read_tsv("data/Gasch2000_complete_dataset_original.txt", 
+                       locale = locale(decimal = ","))
+colnames(expressionLevel_Gasch)[1] <- "geneName"
+
+colnames(expressionLevel_Gasch)[1:72] <- 
+  c('geneName','NAME','GWEIGHT',	'hs_05min_hs-1','hs_10min_hs-1','hs_15min_hs-1','hs_20min_hs-1','hs_30min_hs-1','hs_40min_hs-1','hs_60min_hs-1','hs_80min_hs-1','hs_00min_hs-2','hs_00min_hs-2','hs_00min_hs-2','hs_05min_hs-2','hs_15min_hs-2','hs_30min_hs-2','hs_60min_hs-2','hs_37to25_15min','hs_37to25_30min','hs_37to25_45min','hs_37to25_60min','hs_37to25_90min','hs_17to37_20min', 'hs_21to37_20min','hs_25to37_20min','hs_29to37_20min','hs_33to37_20min','hs_29to33_05min','hs_29to33_15min','hs_29to33_30min','33C_vs_30C_90min','29C(1M_sorbitol)~33C(1M_sorbitol)_05min','29C(1M_sorbitol)~33C(1M_sorbitol)_15min','29C(1M_sorbitol)~33C(1M_sorbitol)_30min','29C(1M_sorbitol)~33C(NO_sorbitol)_05min','29C(1M_sorbitol)~33C(NO_sorbitol)_15min','29C(1M_sorbitol)~33C(NO_sorbitol)_30min','0.32mM_H2O2_10min_redo','0.32mM_H2O2_20min_redo','0.32mM_H2O2_30min_redo','0.32mM_H2O2_40min_rescan','0.32mM_H2O2_50min_redo','0.32mM_H2O2_60min_redo','0.32mM_H2O2_80min_redo','0.32mM_H2O2_100min_redo','0.32mM_H2O2_120min_redo','0.32mM_H2O2_160min_redo','1mM_Menadione_10min_redo','1mM_Menadione_20min_redo','1mM_Menadione_30min_redo','1mM_Menadione_40min_redo','1mM_Menadione_50min_redo','1mM_Menadione_80min_redo','1mM_Menadione_105min_redo','1mM_Menadione_120min_redo','1mM_Menadione_160min_redo','2.5mM_DTT_005min_dtt-1','2.5mM_DTT_015min_dtt-1','2.5mM_DTT_030min_dtt-1','2.5mM_DTT_045min_dtt-1','2.5mM_DTT_060min_dtt-1','2.5mM_DTT_090min_dtt-1','2.5mM_DTT_120min_dtt-1','2.5mM_DTT_180min_dtt-1','dtt_000_min_dtt-2','dtt_015_min_dtt-2','dtt_030_min_dtt-2','dtt_060_min_dtt-2','dtt_120_min_dtt-2','dtt_240_min_dtt-2','dtt_480_min_dtt-2')
+
+colnames(expressionLevel_Gasch)[72:174] <-
+  c('1.5mM_diamide_5min','1.5mM_diamide_10min','1.5mM_diamide_20min','1.5mM_diamide_30min','1.5mM_diamide_40min','1.5mM_diamide_50min','1.5mM_diamide_60min','1.5mM_diamide_90min','1M_sorbitol_05min','1M_sorbitol_15min','1M_sorbitol_30min','1M_sorbitol_45min','1M_sorbitol_60min','1M_sorbitol_90min','1M_sorbitol_120min','Hypo_osmotic_05min','Hypo_osmotic_15min','Hypo_osmotic_30min','Hypo_osmotic_45min','Hypo_osmotic_60min','steady_state_1M_sorbitol','aa_starv_0.5h','aa_starv_1h','aa_starv_2h','aa_starv_4h','aa_starv_6h','Nitrogen_Depletion_30min','Nitrogen_Depletion_1h','Nitrogen_Depletion_2h','Nitrogen_Depletion_4h','Nitrogen_Depletion_8h','Nitrogen_Depletion_12h','Nitrogen_Depletion_1d','Nitrogen_Depletion_2d','Nitrogen_Depletion_3d','Nitrogen_Depletion_5d','Diauxic_Shift_Timecourse_0h','Diauxic_Shift_Timecourse_9.5h','Diauxic_Shift_Timecourse_11.5h','Diauxic_Shift_Timecourse_13.5h','Diauxic_Shift_Timecourse_15.5h','Diauxic_Shift_Timecourse_18.5h','Diauxic_Shift_Timecourse_20.5h','YPD_2h_ypd-2','YPD_4h_ypd-2','YPD_6h_ypd-2','YPD_8h_ypd-2','YPD_10h_ypd-2	YPD_12h_ypd-2','YPD_1d_ypd-2','YPD_2d_ypd-2','YPD_3d_ypd-2','YPD_5d_ypd-2','YPD_stationary_phase_2h_ypd-1','YPD_stationary_phase_4h_ypd-1','YPD_stationary_phase_8h_ypd-1','YPD_stationary_phase_12h_ypd-1','YPD_stationary_phase_1d_ypd-1','YPD_stationary_phase_2d_ypd-1','YPD_stationary_phase_3d_ypd-1','YPD_stationary_phase_5d_ypd-1','YPD_stationary_phase_7d_ypd-1','YPD_stationary_phase_13d_ypd-1','YPD_stationary_phase_22d_ypd-1','YPD_stationary_phase_28d_ypd-1','DBY7286_37C_20min','DBYmsn2-4_37C_20min','DBYmsn2/4_real_strain_37C_20min','DBYyap1-_37Cheat_20min_redo','DBYyap1_37C_repeat','DBY7286_0.3mM_H2O2_20min','DBYmsn2msn4_good_strain_0.32mM_H2O2','DBYmsn2/4_real_strain_0.32mM_H2O2_20min','DBYyap1-_0.3mM_H2O2_20min','DBYyap1_0.32mM_H2O2_20min','Msn2_overexpression_repeat','Msn4_overexpression','YAP1_overexpression','ethanol_vs_reference_pool_car-1','galactose_vs_reference_poolcar-1','glucose_vs_reference_pool_car-1','mannose_vs_reference_pool_car-1','raffinose_vs_reference_pool_car-1','sucrose_vs_reference_pool_car-1','YP_ethanol_vs_reference_pool_car-2','YP_fructose_vs_reference_pool_car-2','YP_galactose_vs_reference_pool_car-2','YP_glucose_vs_reference_pool_car-2','YP_mannose_vs_reference_pool_car-2','YP_raffinose_vs_reference_pool_car-2','YP_sucrose_vs_reference_pool_car-2','17C_growth_ct-1','21C_growth_ct-1','25C_growth_ct-1','29C_growth_ct-1','37C_growth_ct-1','steady_state_15C_ct-2','steady_state_17C_ct-2','steady_state_21C_ct-2','steady_state_25C_ct-2','steady_state_29C_ct-2','steady_state_33C_ct-2','steady_state_36C_ct-2','steady_state_36C_ct-2_repeat_hyb')
+
+
+write.table(expressionLevel_Gasch,"data/Gasch2000_complete_dataset_rename.txt",sep="\t",row.names=FALSE)
+
+```
+
