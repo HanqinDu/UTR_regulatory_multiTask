@@ -1,5 +1,5 @@
 ---
-title: "hanqin_visualize_data"
+title: "intestigating the linear relationship between motifs and gene expression level"
 author: "Hanqin Du"
 date: "2019/10/13"
 output: html_document
@@ -8,15 +8,20 @@ editor_options:
 ---
 
 
-```{r set project folder, eval=FALSE, echo=FALSE}
+```{r set work space for r, eval=FALSE, echo=FALSE}
 par(mfrow=c(1,1))
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 getwd()
 ```
 
 
-## Load library
-```{r load library, results='hide', message=FALSE}
+
+# prepare data
+***
+
+### Load library and function
+Load library for data frame organization, training linear model and plotting
+```{r load library, results='hide', message=FALSE, echo=FALSE}
 library(data.table)
 library(tidyverse)
 library(lmodel2)
@@ -26,27 +31,29 @@ library(gridExtra)
 
 ```
 
+```{r load function, echo=FALSE}
 
-## Load function
-```{r}
-
+# obtain mean square error from a linear model
 mse <- function(model){
   mean(summary(model)$residuals^2)
 }
 
+# plot graph with error bar by value and deviation
 plot_mean_deviation <- function(dataset,label,mean,deviation){
   plot(1:dim(dataset)[1],dataset[[mean]], pch=19,xlab="",ylab="coefficient",xaxt="n",xlim = c(0.5,dim(dataset)[1]+0.5),
-       ylim=c(min(dataset[mean]-dataset[deviation]),max((dataset[mean]+dataset[deviation]))))
-  lines(rbind(1:dim(dataset)[1],1:dim(dataset)[1],NA),rbind(dataset[[mean]]-dataset[[deviation]],dataset[[mean]]+dataset[[deviation]],NA))
+       ylim=c(min(dataset[mean]-1.96*dataset[deviation]),max((dataset[mean]+1.96*dataset[deviation]))))
+  lines(rbind(1:dim(dataset)[1],1:dim(dataset)[1],NA),rbind(dataset[[mean]]-1.96*dataset[[deviation]],dataset[[mean]]+1.96*dataset[[deviation]],NA))
   axis(side=1,at=1:dim(dataset)[1],labels=dataset[[label]])
 }
 
 
 ```
 
+### Load Data
+First, load 69 published motifs and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
 
-## Load Data
-```{r Load Data}
+**a problem with Gasch's data: there are three duplicated column called 'hs_00min_hs-2', need to check them in the article**
+```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
 
 #ref datasets for UTRs 
 UTR_raw <- read_rds("../data/Sun_mutation_UTRs.rds")
@@ -67,13 +74,13 @@ for (i in names(expressionLevel_Gasch)[3:175]) {
   expressionLevel_Gasch[[i]] <- as.numeric(as.character(expressionLevel_Gasch[[i]]))
 }
 
-names_environment_conditions = names(expressionLevel_Gasch)[4:175]
+#names_environment_conditions = names(expressionLevel_Gasch)[4:175]
 
 ```
 
-
-## Construct Motif Frequencies Matrix from 3'UTR Ref sequences
-```{r motif search}
+### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+By converting all the motifs to regular expression, we are able to construct motifs frequency matrix which describes the frequency of 69 motifs among 4388 different genes.
+```{r construct motif frequency, echo=FALSE}
 
 #Dictionary for non-specific codes and converting U -> T
 motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
@@ -92,15 +99,61 @@ names_motifs_all <- names(ref_motifs)[2:length(ref_motifs)]
 ```
 
 
-## merge motif frequency matrix with Gasch's data
-```{r merge motifs frequency with gasch data}
+### Merge motif frequency matrix with Gasch's data
+Finally, we inner join the motif frequency matrix with Gasch's data and get the data frame we are going to explore. Each row represented data from one of the 4284 genes (since we have carried out inner join, only the genes shown in both tables are kept). There are 245 columns in total. 3 of them describe the basic information (short and formal name) of the gene represented by the row. 173 of them show how the gene expression level change under the certain environment condition and the other 69 of them respect the frequency of the 69 published motifs on the 3’UTR.
+```{r merge motifs frequency with gasch data, echo=FALSE}
 
 # merge motifs
 fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
 
-# remove useless motifs
-motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
+# convert type of motifs frequency to factor for violin plotting
+fullTable_Gasch_factor = fullTable_Gasch
+for(i in names_motifs_all){
+    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
+}
+```
 
+***
+# Investigate motif frequency
+
+### Summing the frequency of each motif
+summing by columns, we get the total frequency of each motif among all the 4284 genes. The mean is 141 while the median is merely 5, which indicates more than half of the motifs have a very low frequency. It could be difficult to carry out analysis on these low-frequency motifs since a small sample size could led to high uncertainty.
+
+```{r echo=FALSE}
+motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
+```
+
+summary of the summing frequency:
+```{r echo=FALSE}
+summary(motifs_count_sum)
+```
+
+### Drawing histogram:
+```{r }
+hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,50,3000), main = 'histogram of motifs frequency sum')
+```
+
+### Draw the table:
+
+| Frequency  | number of motifs (n) |
+| ---------- | -------------------- |
+| n = 0      | 19                   |
+| 0 < n < 6  | 17                   |
+| 5 < n < 21 | 12                   |
+| n > 20     | 21                   |
+
+One possible explanation of the huge amount of low-frequency motifs is that it is hard to match exactly the regular expression to the UTR sequence. Another point is, a motif with a significant effect on regulation is reasonable to have a small frequency.
+
+```{r echo=FALSE, results=FALSE}
+length(motifs_count_sum[motifs_count_sum == 0])
+length(motifs_count_sum[motifs_count_sum < 6 & motifs_count_sum > 0])
+length(motifs_count_sum[motifs_count_sum < 21 & motifs_count_sum > 5])
+length(motifs_count_sum[motifs_count_sum > 20])
+```
+
+### Remove motifs with frequency 0
+There is absolutely no way to study motifs with 0 frequency as their correlation coefficient against the expression level should always be 0. Therefore, simply removing them should be reasonable.
+```{r echo=FALSE}
 remove_list = NULL
 
 for (i in names(motifs_count_sum)){
@@ -110,35 +163,21 @@ for (i in names(motifs_count_sum)){
 }
 
 names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
-
-# convert type of motifs frequency to factor for violin plotting
-fullTable_Gasch_factor = fullTable_Gasch
-for(i in names_motifs_all){
-    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
-}
-
 ```
 
 
-## investigate the frequency sum of each motifs
-```{r investigate frequency}
-mean(motifs_count_sum)
-median(motifs_count_sum)
+***
+# Compute correlation coefficient between motifs and expression level
+To check if expression level depends linearly on some of the motifs, the easiest way is to compute the correlation coefficient between them.
 
-plot(motifs_count_sum)
-hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,50,3000))
+### Picking a group of heat-shock related environment condition 
+We start by picking a group of environmental conditions about heat shock - Heat Shock from Various Temperatures to 37°C. According to Gasch’s article:
 
-length(motifs_count_sum[motifs_count_sum == 0])
-length(motifs_count_sum[motifs_count_sum < 6 & motifs_count_sum > 0])
-length(motifs_count_sum[motifs_count_sum < 21 & motifs_count_sum > 5])
-length(motifs_count_sum[motifs_count_sum > 20])
-```
+> Six cultures were grown continuously at 17°, 21°, 25°, 29°, 33°, or 37°C for ;20 h. Half of each culture was collected to serve as the unstressed reference, and the remainder of each culture was collected by centrifugation and immediately resuspended in 37°C medium. After 20 min at 37°C, the cells were harvested, and total RNA was isolated.
 
+Therefore, the figure of the expression level represents how the cell response to the heat shock. A positive number shows the expression level is raised while a negative number means decreasing.
 
-## compute correlation coefficient
-```{r obtain corrilation factor}
-
-# pick a group of temperature condition
+```{r}
 names_temperature_condition = vector(mode="character", length=5)
 names_temperature_condition[1] = "hs_17to37_20min"
 names_temperature_condition[2] = "hs_21to37_20min"
@@ -146,6 +185,16 @@ names_temperature_condition[3] = "hs_25to37_20min"
 names_temperature_condition[4] = "hs_29to37_20min"
 names_temperature_condition[5] = "hs_33to37_20min"
 
+```
+
+```{r fig.width=15}
+summary(fullTable_Gasch[names_temperature_condition])
+```
+
+
+### Calculate the correlation coefficient
+At this step, we get a data frame that each row represent the correlation coefficients of a motif under these environmental conditions
+```{r echo=FALSE}
 # compute correlation coefficient
 motif_overview <- as.data.frame(
   cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
@@ -153,112 +202,122 @@ motif_overview <- as.data.frame(
 # compute mean
 motif_overview$R_mean <- rowMeans(motif_overview[names_temperature_condition[1:5]])
 
-head(motif_overview)
-
 ```
 
+a peek of the dataset:
+```{r}
+head(motif_overview)
+summary(motif_overview)
+```
 
-## plot coefficient against each motif
-```{r echo=FALSE, fig.width=18, fig.height=18}
-
-# plot multi-line to check if any motif sensitive to temperature
-
+  
+### Plot coefficient of each motif against each heat-shock related environment condition
+There are four motifs that show a much higher correlation coefficient rather than the others. It is very likely that these four motifs have a linear relation with heat-shock relevant environmental conditions.
+```{r echo=FALSE, fig.width=15, fig.height=12}
 ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
-  labs(x = "ESR", y = "correlation coefficient")
+  labs(x = "environment condition", y = "correlation coefficient") + 
+  ggtitle('motifs correlation coefficient against a group of heat-shock environment condition')
+```
+
+```{r eval=FALSE,echo=FALSE, fig.width=18, fig.height=18}
+
+# plot multi-line to check if any motif sensitive to temperature
 
 p1 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[1:5,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) + 
-  labs(x = "ESR", y = "correlation coefficient")
+  labs(x = "environment condition", y = "correlation coefficient")
 
 p2 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[6:10,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) + 
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p3 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[11:15,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) + 
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p4 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[16:20,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p5 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[21:25,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p6 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[26:30,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p7 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[31:35,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p8 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[36:40,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p9 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[41:45,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 p10 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[46:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) +
-  labs(x = "ESR",y = "correlation coefficient")
+  labs(x = "environment condition",y = "correlation coefficient")
 
 grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10, ncol=2)
 
-
-## plot motifs with high correlation coefficient
-ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1)
-
 ```
 
+### Plot the four motifs with significant magnitude of correlation coefficient
+```{r, echo=FALSE, fig.width=10, fig.height=7}
+## plot motifs with high correlation coefficient
+ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
+  labs(x = "environment condition", y = "correlation coefficient")
+```
 
-## plot the distribution of the motifs with high coefficient 
-```{r warning=FALSE, echo=FALSE, fig.width=10}
-
-# apply filter |x| > 0.05 to check significant value
-#correlation_filter <- motif_overview[names_temperature_condition]
-#correlation_filter[correlation_filter<0.05&correlation_filter>-0.05] <- NA
-
-
+### Plot the distribution of the motifs with high coefficient
+it is not hard to see the linear relation between these motifs and expression level
+```{r warning=FALSE, echo=FALSE, fig.height=10}
 # plot violin graph to check distribution
 grid.arrange(
-  ggplot(fullTable_Gasch_factor,aes(x=UGUAHMNUA,y=hs_17to37_20min)) + geom_violin(),
-  ggplot(fullTable_Gasch_factor,aes(x=TGTATAWT,y=hs_17to37_20min)) + geom_violin(),
-  ggplot(fullTable_Gasch_factor,aes(x=ATATTC,y=hs_17to37_20min)) + geom_violin(),
-  ncol=3
+  ggplot(fullTable_Gasch_factor,aes(x=UGUAHMNUA,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=TGTATAWT,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=ATATTC,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=TGTAAATA,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ncol=2
   )
 ```
 
 
-## carry out linear regression on two set of expression data
-```{r}
 
+# Carry out linear regression on two set of expression data
+***
+Building a linear model and check the coefficient could be another way to investigate the relationship between motifs and environment condition. In this case, we apply all the motifs with frequency larger than 0 to predict the change of expression level. We expect the 4 motifs with a high correlation coefficient are given relatively high weight in the model since they have shown a high linear dependency against expression level in the previous analysis.
+
+### Train linear model on "Heat Shock from 17°C to 37°C" and "Heat Shock from 25°C to 37°C" with 50 motifs as feature values.
+```{r ,echo=FALSE}
 # train models
 formula_lm_17to37 <- as.formula(paste("hs_17to37_20min ~",paste(names_motifs_valid, collapse = "+")))
 lm_17to37 = lm(formula_lm_17to37,fullTable_Gasch)
@@ -284,18 +343,32 @@ motif_overview <- merge(motif_overview,
 motif_overview <- transform(motif_overview, row.names=Row.names)
 colnames(motif_overview)[colnames(motif_overview)=="Row.names"] <- "motif"
 
-head(motif_overview)
-
 ```
 
+### Summary of the linear model training  from "Heat Shock from 17°C to 37°C"
+A well distributed and straight horizontal line of both Residual vs Fitted and Scale-Location graph indicates the expression level could be linear depends on the features and it is not likely to bring any more improvement by carrying out exponent transformation(e.g. log, square root, exponential function) on features value. The Normal Q-Q plot shows the quantile of sample distribution against the quantile of normal distribution. This graph makes sense because the sample point represents the expression level of each gene and they have no reason to be a normal distribution. The last graph - residuals vs Leverage plot tells us which points have the greatest influence on the regression. This graph is mainly used for checking outliers, Leverage points, and Influential points. As we can see from the graph, there is Leverage point on the graph(the point with leverage > 15). fortunately, it’s not an outlier.
 
-## plot each coefficient with their deviation
-```{r warning=FALSE, fig.width=15, fig.height=15}
-
+Overall, there is not significant problem with this linear model.
+```{r fig.height=12, fig.width=12, warning=FALSE, echo=FALSE}
 # coefficient from linear model: "hs_17to37_20min"
 par(mfrow=c(2,2))
 plot(lm_17to37)
 mse(lm_17to37)
+```
+
+### Summary of the linear model training  from "Heat Shock from 25°C to 37°C"
+```{r fig.height=12, fig.width=12, warning=FALSE, echo=FALSE}
+# coefficient from linear model: "hs_25to37_20min"
+par(mfrow=c(2,2))
+plot(lm_25to37)
+mse(lm_25to37)
+```
+
+### Coefficient of the linear model training from "Heat Shock from 17°C to 37°C"
+The error bar shows the 95% confidence interval.
+
+all of the 4 motifs - `UGUAHMNUA`, `ATATTC`, `TGTATAWT`, and `TGTAAATA` gain a high coefficient and relatively low standard error as we expected. However, there are many other motifs that have a quite high coefficient (but high standard error) in the model too.
+```{r warning=FALSE, fig.width=18, fig.height=15, echo=FALSE}
 
 par(mfrow=c(5,1))
 {plot_mean_deviation(motif_overview[1:10,],"motif","W_17to37","SE_17to37")
@@ -309,12 +382,11 @@ par(mfrow=c(5,1))
 {plot_mean_deviation(motif_overview[41:50,],"motif","W_17to37","SE_17to37")
   abline(h=0, col="red")}
 
+```
 
-# coefficient from linear model: "hs_25to37_20min"
-par(mfrow=c(2,2))
-plot(lm_25to37)
-mse(lm_25to37)
-
+### Coefficient of the linear model training from "Heat Shock from 25°C to 37°C"
+the second linear model shows a very similar coefficient as the previous one.
+```{r warning=FALSE, fig.width=18, fig.height=15, echo=FALSE}
 par(mfrow=c(5,1))
 {plot_mean_deviation(motif_overview[1:10,],"motif","W_25to37","SE_25to37")
   abline(h=0, col="red")}
@@ -326,42 +398,33 @@ par(mfrow=c(5,1))
   abline(h=0, col="red")}
 {plot_mean_deviation(motif_overview[41:50,],"motif","W_25to37","SE_25to37")
   abline(h=0, col="red")}
-
 ```
 
 
-## plot distribution of the motifs with unexpected high coefficient
-```{r echo=FALSE, warning=FALSE}
+### Plot distribution of the motifs with unexpected high coefficient
+The motifs with an unexpected high coefficient and high stadard error are mainly the motifs with low frequency.
+```{r echo=FALSE, warning=FALSE,fig.height=10}
 # motif with unexpected high coefficient
-ggplot(fullTable_Gasch_factor,aes(x=WAAAGGTAGTAAGT,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=TTTTCTAGGDD,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=WWTMGTATATTGTMA,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=RAGGAGACGT,y=hs_17to37_20min)) + geom_violin() + geom_point()
-
-```
-
-## plot distribution of the motifs expected and actual have a high coefficient
-```{r echo=FALSE, warning=FALSE}
-# motif expected and have a high coefficient
-ggplot(fullTable_Gasch_factor,aes(x=UGUAHMNUA,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=ATATTC,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=TGTATAWT,y=hs_17to37_20min)) + geom_violin() + geom_point()
-
-
-```
-
-## plot distribution of the motifs expected and actual have a high coefficient
-```{r echo=FALSE, warning=FALSE}
-# motif expected and have a low coefficient
-ggplot(fullTable_Gasch_factor,aes(x=HWNCAUUWY,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=AGACAATCT,y=hs_17to37_20min)) + geom_violin() + geom_point()
+grid.arrange(
+  ggplot(fullTable_Gasch_factor,aes(x=WAAAGGTAGTAAGT,y=hs_17to37_20min)) + geom_violin() +
+    geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=TTTTCTAGGDD,y=hs_17to37_20min)) + geom_violin() +
+    geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=WWTMGTATATTGTMA,y=hs_17to37_20min)) + geom_violin() +
+    geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=RAGGAGACGT,y=hs_17to37_20min)) + geom_violin() +
+    geom_point(),
+  ncol = 2
+)
 
 ```
 
 
-## carry out linear regression with high-frequency motif (>20)
-```{r}
-
+# Carry out linear regression with high-frequency motif (>20)
+***
+### Remove low-frequency motifs to eliminate unexpected influence.
+We are not confident enough to tell whether a low-frequency motif depends linearly on the heat-shock related environment condition. Therefore, we temporarily remove them and carry out linear regression again to see if we may find any other linearly related motifs.
+```{r ,echo=FALSE}
 # filter out motif with frequency lower than 20
 remove_list = NULL
 
@@ -372,7 +435,10 @@ for (i in names(motifs_count_sum)){
 }
 
 names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
+```
 
+### Train linear model on "Heat Shock from 17°C to 37°C" and "Heat Shock from 25°C to 37°C" with 50 motifs as feature values.
+```{r echo=FALSE}
 
 # train models
 formula_lm_17to37 <- as.formula(paste("hs_17to37_20min ~",paste(names_motifs_valid, collapse = "+")))
@@ -400,18 +466,26 @@ motif_overview <- merge(motif_overview,
 motif_overview <- motif_overview[-1,-1]
 motif_overview <- transform(motif_overview, row.names=motif)
 
-head(motif_overview)
-
 ```
 
-## plot each coefficient with their deviation
-```{r fig.width=15, fig.height=15}
-#plot(fullTable_Gasch$WUUGUAWUWU,fullTable_Gasch$`heat shock 17 to 37, 20 minutes`)
-#plot(fullTable_Gasch$AAAATAAAG,fullTable_Gasch$`heat shock 17 to 37, 20 minutes`)
-
+### Summary of the linear model training  from "Heat Shock from 17°C to 37°C"
+Similar to the previous one
+```{r fig.height=12, fig.width=12, warning=FALSE, echo=FALSE}
 par(mfrow=c(2,2))
 plot(lm_17to37)
 mse(lm_17to37)
+```
+
+### Summary of the linear model training  from "Heat Shock from 25°C to 37°C"
+```{r fig.height=12, fig.width=12, warning=FALSE, echo=FALSE}
+par(mfrow=c(2,2))
+plot(lm_25to37)
+mse(lm_25to37)
+```
+
+
+### Coefficient of the linear model training from "Heat Shock from 17°C to 37°C"
+```{r fig.width=18, fig.height=15, echo=FALSE}
 
 par(mfrow=c(2,1))
 {plot_mean_deviation(motif_overview[names_motifs_valid[1:10],],"motif","W_17to37_filtered","SE_17to37_filtered")
@@ -419,34 +493,140 @@ par(mfrow=c(2,1))
 {plot_mean_deviation(motif_overview[names_motifs_valid[11:21],],"motif","W_17to37_filtered","SE_17to37_filtered")
   abline(h=0, col="red")}
 
+```
 
-par(mfrow=c(2,2))
-plot(lm_25to37)
-mse(lm_25to37)
-
+### Coefficient of the linear model training from "Heat Shock from 25°C to 37°C"
+```{r fig.width=18, fig.height=15, echo=FALSE}
 par(mfrow=c(2,1))
 {plot_mean_deviation(motif_overview[names_motifs_valid[1:10],],"motif","W_25to37_filtered","SE_25to37_filtered")
   abline(h=0, col="red")}
 {plot_mean_deviation(motif_overview[names_motifs_valid[11:21],],"motif","W_25to37_filtered","SE_25to37_filtered")
   abline(h=0, col="red")}
-
-
 ```
 
-## plot distribution of the motifs with unexpected high coefficient
-```{r echo=FALSE, warning=FALSE}
-# apply filter |x| > 0.05 to check significant value
-motif_overview_filter <- motif_overview
-motif_overview_filter[motif_overview_filter<0.05&motif_overview_filter>-0.05] <- NA
+### checking the coefficient, Std.Error, and t value of the motifs with high coefficient in linear model training from "Heat Shock from 17°C to 37°C"
+`Estimate` shows the coefficient or weight of the responding features gains in this linear model. `Std.Error` is the standard error of the `estimate` value, which, can be used to calculate the Confidence interval. For example, the 95% confident interval could be obtained from Estimate +- 1.96*Std.Error. `t value` is calculated from the estimates divided by their standard errors. To make the best use of this value, we need to look up the table of t distribution to learn the reject boundary. In this case, we could simply say the larger the magnitude of the t-value is, the less likely that the coefficient is 0. `Pr(>\|t\|)` is the p-value which is the probability of achieving a |t| as large as or larger than the observed absolute t value if the null hypothesis (estimate = 0) was true. In short, it is the probability that there is no relationship between that feature and the predicted value.
 
+motifs with relatively low p-value are listed below:
+
+| Motif      | Estimate | Std.Error | t value | Pr(>\|t\|) |
+| ---------- | -------- | --------- | ------- | ---------- |
+| UGUAHMNUA  | -1.052   | 0.084     | -12.445 | <2e-16     |
+| ATATTC     | 0.308    | 0.057     | 5.429   | 5.98e-08   |
+| TGTATAWT   | -0.465   | 0.095     | -4.898  | 1.00e-06   |
+| WUUGUAWUWU | -0.524   | 0.156     | -3.354  | 0.0008     |
+| UAAUAAUW   | -0.247   | 0.083     | -2.991  | 0.0028     |
+| TGTAAATA   | 0.234    | 0.103     | 2.263   | 0.0237     |
+| AAAATAAAG  | -0.572   | 0.281     | -2.035  | 0.0420     |
+| UUUAAUGA   | 0.304    | 0.162     | 1.874   | 0.0610     |
+| TCATGTAT   | -0.324   | 0.207     | -1.564  | 0.1179     |
+
+```{r eval=FALSE, echo=FALSE}
+summary(lm_17to37)
+```
+
+
+### Plot distribution of the motifs with high coefficient (apart from the 4 motifs we explore before
+Although the effect seems to be very slight, these motifs do have a linear relationship with expression level 
+```{r echo=FALSE, warning=FALSE, fig.height=15}
 # motif with unexpected high coefficient
-
-ggplot(fullTable_Gasch_factor,aes(x=WUUGUAWUWU,y=hs_17to37_20min)) + geom_violin() + geom_point()
-ggplot(fullTable_Gasch_factor,aes(x=TGTAAATA,y=hs_17to37_20min)) + geom_violin() + geom_point()
+grid.arrange(
+  ggplot(fullTable_Gasch_factor,aes(x=WUUGUAWUWU,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=UAAUAAUW,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=TGTAAATA,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=AAAATAAAG,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=UUUAAUGA,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ggplot(fullTable_Gasch_factor,aes(x=TCATGTAT,y=hs_17to37_20min)) + geom_violin() + geom_point(),
+  ncol=2
+)
 
 ```
 
 
+# Summary
+***
+we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment conditions provided by Gasch's data and 50 motifs from 69 published motifs (65 experimented motifs and 4 Cheng's motifs). More than half of the motifs has a relatively low frequency. By investigating the corresponding correlation coefficient and carrying out linear regression, we found 4 strong linear-related motifs and 6 weak linear-related motifs. Thus, Only a small fraction of motifs responds to heat-shock related environment stress. 
+
+As Gasch's study mentioned:
+
+>the ESR (environment stress respond) is not initiated in response to all environmental changes
+
+>The ESR is initiated not only by conditions known to threaten cellular viability, but also by small environmental changes that do not detectably impair viability and growth.
+
+Gene expression level under an non-ESR-initiated environment may probably depend on different motifs. Maybe it's worth to look into another group of environmental conditions?
 
 
+# Explore the correlation between motifs frequency and expression level under of steady-state under certain temperature
+***
+### Calculate correlation coefficient and plot them
+```{r echo=FALSE}
+
+# consider only motif with frequency larger than 0
+remove_list = NULL
+
+for (i in names(motifs_count_sum)){
+  if (motifs_count_sum[[i]] == 0){
+    remove_list <- c(remove_list,i)
+  }
+}
+
+names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
+
+# pick a group of temperature condition
+names_temperature_condition = vector(mode="character", length=7)
+names_temperature_condition[1] = "steady_state_15C_ct-2"
+names_temperature_condition[2] = "steady_state_17C_ct-2"
+names_temperature_condition[3] = "steady_state_21C_ct-2"
+names_temperature_condition[4] = "steady_state_25C_ct-2"
+names_temperature_condition[5] = "steady_state_29C_ct-2"
+names_temperature_condition[6] = "steady_state_33C_ct-2"
+names_temperature_condition[7] = "steady_state_36C_ct-2"
+
+# compute correlation coefficient
+motif_overview_steady_temperature <- as.data.frame(
+  cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
+
+# compute mean
+motif_overview_steady_temperature$R_mean <- rowMeans(motif_overview_steady_temperature[names_temperature_condition[1:5]])
+
+```
+
+
+### Plot coefficient against each motif
+```{r echo=FALSE, fig.width=18, fig.height=12}
+# plot multi-line to check if any motif sensitive to temperature
+ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[1:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn)) + 
+  ylim(-0.25,0.1)+
+  labs(x = "environment condition", y = "correlation coefficient")
+
+```
+
+### correlation coefficient of the 4 strong linear-related motifs
+```{r echo=FALSE, fig.width=15, fig.height=12}
+motif_temperature_sensitive = c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA')
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
+  labs(x = "environment condition", y = "correlation coefficient")
+```
+
+### correlation coefficient of the 6 weak linear-related motifs
+```{r echo=FALSE, fig.width=15, fig.height=12}
+motif_temperature_sensitive = c('WUUGUAWUWU','UAAUAAUW', 'AAAATAAAG', 'UUUAAUGA','TCATGTAT')
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + ggtitle('the motifs we find by linear regression') + 
+  labs(x = "environment condition", y = "correlation coefficient")
+```
+
+### other motifs with interesting curves
+```{r echo=FALSE, fig.width=15, fig.height=12}
+motif_temperature_sensitive = c('GTAAAMAT','RAGGAGACGT','HWNCAUUWY','TTTTTTA','TWGTATAGTA')
+
+ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
+  labs(x = "environment condition", y = "correlation coefficient")
+```
 
