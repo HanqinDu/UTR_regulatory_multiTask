@@ -50,7 +50,7 @@ plot_mean_deviation <- function(dataset,label,mean,deviation){
 ```
 
 ### Load Data
-First, load 69 published motifs and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
+Load 69 published motifs (from Abhi's report) and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
 
 **a problem with Gasch's data: there are three duplicated column called 'hs_00min_hs-2', need to check them in the article**
 ```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
@@ -117,7 +117,7 @@ for(i in names_motifs_all){
 # Investigate motif frequency
 
 ### Summing the frequency of each motif
-summing by columns, we get the total frequency of each motif among all the 4284 genes. The mean is 141 while the median is merely 5, which indicates more than half of the motifs have a very low frequency. It could be difficult to carry out analysis on these low-frequency motifs since a small sample size could led to high uncertainty.
+To begin with, we want to investigate the sample size of the data. After summing by columns, we get the total frequency of each motif among all the 4284 genes. The mean is 141 while the median is merely 5, which indicates more than half of the motifs have a very low frequency. It could be difficult to carry out analysis on these low-frequency motifs since a small sample size could led to high uncertainty.
 
 ```{r echo=FALSE}
 motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
@@ -212,81 +212,19 @@ summary(motif_overview)
 
   
 ### Plot coefficient of each motif against each heat-shock related environment condition
-There are four motifs that show a much higher correlation coefficient rather than the others. It is very likely that these four motifs have a linear relation with heat-shock relevant environmental conditions.
+There are four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. Another point is, two of the motifs - `TGTAAATA` and `TGTATAWT` are very similar to each other though there is a large difference between their correlation coefficient.
+
+`TGTAAATA` is from Cheng's study: `Cis-regulatory elements explain most of the mRNA stability variation across genes in yeast`
+
+`TGTATAWT`, motif name `M24`, is from Shalgi's study: `A catalog of stability-associated sequence elements in 3' UTRs of yeast mRNAs` 
+
+
 ```{r echo=FALSE, fig.width=15, fig.height=12}
 ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   labs(x = "environment condition", y = "correlation coefficient") + 
   ggtitle('motifs correlation coefficient against a group of heat-shock environment condition')
-```
-
-```{r eval=FALSE,echo=FALSE, fig.width=18, fig.height=18}
-
-# plot multi-line to check if any motif sensitive to temperature
-
-p1 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[1:5,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) + 
-  labs(x = "environment condition", y = "correlation coefficient")
-
-p2 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[6:10,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) + 
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p3 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[11:15,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) + 
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p4 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[16:20,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p5 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[21:25,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p6 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[26:30,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p7 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[31:35,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p8 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[36:40,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p9 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[41:45,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-p10 <- ggplot(data = melt(setDT(as.data.frame(motif_overview[46:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn)) + 
-  ylim(-0.25,0.1) +
-  labs(x = "environment condition",y = "correlation coefficient")
-
-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10, ncol=2)
-
 ```
 
 ### Plot the four motifs with significant magnitude of correlation coefficient
@@ -367,7 +305,7 @@ mse(lm_25to37)
 ### Coefficient of the linear model training from "Heat Shock from 17°C to 37°C"
 The error bar shows the 95% confidence interval.
 
-all of the 4 motifs - `UGUAHMNUA`, `ATATTC`, `TGTATAWT`, and `TGTAAATA` gain a high coefficient and relatively low standard error as we expected. However, there are many other motifs that have a quite high coefficient (but high standard error) in the model too.
+all of the 4 motifs - `UGUAHMNUA`, `ATATTC`, `TGTATAWT`, and `TGTAAATA` gain a high coefficient and relatively low standard error as we expected. However, there are many other motifs that have a relatively high coefficient (but high standard error as well) in the model.
 ```{r warning=FALSE, fig.width=18, fig.height=15, echo=FALSE}
 
 par(mfrow=c(5,1))
@@ -505,7 +443,7 @@ par(mfrow=c(2,1))
 ```
 
 ### checking the coefficient, Std.Error, and t value of the motifs with high coefficient in linear model training from "Heat Shock from 17°C to 37°C"
-`Estimate` shows the coefficient or weight of the responding features gains in this linear model. `Std.Error` is the standard error of the `estimate` value, which, can be used to calculate the Confidence interval. For example, the 95% confident interval could be obtained from Estimate +- 1.96*Std.Error. `t value` is calculated from the estimates divided by their standard errors. To make the best use of this value, we need to look up the table of t distribution to learn the reject boundary. In this case, we could simply say the larger the magnitude of the t-value is, the less likely that the coefficient is 0. `Pr(>\|t\|)` is the p-value which is the probability of achieving a |t| as large as or larger than the observed absolute t value if the null hypothesis (estimate = 0) was true. In short, it is the probability that there is no relationship between that feature and the predicted value.
+`Estimate` shows the coefficient or weight gains by the responding features in this linear model. `Std.Error` is the standard error of the `estimate` value, which, can be used to calculate the Confidence interval. For example, the 95% confident interval could be obtained from Estimate +- 1.96*Std.Error. `t value` is calculated from the estimates divided by their standard errors. To make the best use of this value, we need to look up the table of t distribution to learn the reject boundary. In this case, we could simply say the larger the magnitude of the t-value is, the less likely that the coefficient is 0. `Pr(>\|t\|)` is the p-value which is the probability of achieving a |t| as large as or larger than the observed absolute t value if the null hypothesis (estimate = 0) was true. In short, it is the probability that there is no relationship between that feature and the predicted value.
 
 motifs with relatively low p-value are listed below:
 
@@ -521,13 +459,16 @@ motifs with relatively low p-value are listed below:
 | UUUAAUGA   | 0.304    | 0.162     | 1.874   | 0.0610     |
 | TCATGTAT   | -0.324   | 0.207     | -1.564  | 0.1179     |
 
+
+None of the 5 additional motifs has been mentioned in Abhi's report. More tests should be carried out on these motifs for a more general conclusion.
+
 ```{r eval=FALSE, echo=FALSE}
 summary(lm_17to37)
 ```
 
 
 ### Plot distribution of the motifs with high coefficient (apart from the 4 motifs we explore before
-Although the effect seems to be very slight, these motifs do have a linear relationship with expression level 
+Although the influence seems to be very slight, these motifs do have a linear relationship with expression level 
 ```{r echo=FALSE, warning=FALSE, fig.height=15}
 # motif with unexpected high coefficient
 grid.arrange(
@@ -545,20 +486,26 @@ grid.arrange(
 
 # Summary
 ***
-we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment conditions provided by Gasch's data and 50 motifs from 69 published motifs (65 experimented motifs and 4 Cheng's motifs). More than half of the motifs has a relatively low frequency. By investigating the corresponding correlation coefficient and carrying out linear regression, we found 4 strong linear-related motifs and 6 weak linear-related motifs. Thus, Only a small fraction of motifs responds to heat-shock related environment stress. 
+we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment conditions provided by Gasch's data and 50 motifs from 69 published motifs (65 experimented motifs and 4 Cheng's motifs). More than half of the motifs has a relatively low frequency. By investigating the corresponding correlation coefficient and carrying out linear regression, we found 4 strong linear-related motifs and 5 weak linear-related motifs. Thus, Only a small fraction of motifs responds to heat-shock related environment stress. 
 
 As Gasch's study mentioned:
 
 >the ESR (environment stress respond) is not initiated in response to all environmental changes
 
+>Unlike the response to a 25°C to 37°C heat shock, which elicited massive and transient changes in ESR expression, the transition from 37°C to 25°C resulted in a simple rapid transition to the gene expression program characteristic of steady-state growth at 25°C, with essentially no transient features.
+
 >The ESR is initiated not only by conditions known to threaten cellular viability, but also by small environmental changes that do not detectably impair viability and growth.
 
-Gene expression level under an non-ESR-initiated environment may probably depend on different motifs. Maybe it's worth to look into another group of environmental conditions?
+Only part of the environment changes initiate ESR. heat-shock from 25°C to 37°C is one of them. Gene expression levels under a non-ESR-initiated environmental change may probably be influenced by different motifs. Maybe it's worth to look into another group of environmental conditions?
 
 
 # Explore the correlation between motifs frequency and expression level under of steady-state under certain temperature
 ***
 ### Calculate correlation coefficient and plot them
+A group of steady state are selected:
+
+>To measure steady-state expression at each temperature, RNA collected from cells grown continuously at each temperature was also compared directly to RNA from cells grown at 33°C.
+
 ```{r echo=FALSE}
 
 # consider only motif with frequency larger than 0
@@ -572,6 +519,9 @@ for (i in names(motifs_count_sum)){
 
 names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 
+```
+
+```{r}
 # pick a group of temperature condition
 names_temperature_condition = vector(mode="character", length=7)
 names_temperature_condition[1] = "steady_state_15C_ct-2"
@@ -588,7 +538,6 @@ motif_overview_steady_temperature <- as.data.frame(
 
 # compute mean
 motif_overview_steady_temperature$R_mean <- rowMeans(motif_overview_steady_temperature[names_temperature_condition[1:5]])
-
 ```
 
 
