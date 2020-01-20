@@ -27,9 +27,8 @@ library(tidyverse)
 library(lmodel2)
 library(splitstackshape)
 library(gridExtra)
-#library(glmnet)
-
 ```
+
 
 ```{r load function, echo=FALSE}
 
@@ -74,8 +73,6 @@ for (i in names(expressionLevel_Gasch)[3:175]) {
   expressionLevel_Gasch[[i]] <- as.numeric(as.character(expressionLevel_Gasch[[i]]))
 }
 
-#names_environment_conditions = names(expressionLevel_Gasch)[4:175]
-
 ```
 
 ### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
@@ -91,8 +88,7 @@ ref_motifs <- tibble(geneName = UTR_raw$genename)
 
 #Search and add frequency of each c(motif) as a column in ref dataset
 for (i in 1:length(motifs)){
-ref_motifs <- mutate(.data = ref_motifs, 
-                      !!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
 }
 
 names_motifs_all <- names(ref_motifs)[2:length(ref_motifs)]
@@ -111,10 +107,12 @@ fullTable_Gasch_factor = fullTable_Gasch
 for(i in names_motifs_all){
     fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
 }
+
 ```
 
-***
+
 # Investigate motif frequency
+***
 
 ### Summing the frequency of each motif
 To begin with, we want to investigate the sample size of the data. After summing by columns, we get the total frequency of each motif among all the 4284 genes. The mean is 141 while the median is merely 5, which indicates more than half of the motifs have a very low frequency. It could be difficult to carry out analysis on these low-frequency motifs since a small sample size could led to high uncertainty.
@@ -129,7 +127,7 @@ summary(motifs_count_sum)
 ```
 
 ### Drawing histogram:
-```{r }
+```{r}
 hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,50,3000), main = 'histogram of motifs frequency sum')
 ```
 
@@ -152,7 +150,7 @@ length(motifs_count_sum[motifs_count_sum > 20])
 ```
 
 ### Remove motifs with frequency 0
-There is absolutely no way to study motifs with 0 frequency as their correlation coefficient against the expression level should always be 0. Therefore, simply removing them should be reasonable.
+There is no way to study motifs with 0 frequency as their correlation coefficient against the expression level should always be 0. Therefore, simply removing them should be reasonable.
 ```{r echo=FALSE}
 remove_list = NULL
 
@@ -212,11 +210,7 @@ summary(motif_overview)
 
   
 ### Plot coefficient of each motif against each heat-shock related environment condition
-There are four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. Another point is, two of the motifs - `TGTAAATA` and `TGTATAWT` are very similar to each other though there is a large difference between their correlation coefficient.
-
-`TGTAAATA` is from Cheng's study: `Cis-regulatory elements explain most of the mRNA stability variation across genes in yeast`
-
-`TGTATAWT`, motif name `M24`, is from Shalgi's study: `A catalog of stability-associated sequence elements in 3' UTRs of yeast mRNAs` 
+There are four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. 
 
 
 ```{r echo=FALSE, fig.width=15, fig.height=12}
@@ -230,9 +224,12 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_con
 ### Plot the four motifs with significant magnitude of correlation coefficient
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
 ## plot motifs with high correlation coefficient
-ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
-       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
-  labs(x = "environment condition", y = "correlation coefficient")
+ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn)) + 
+  ylim(-0.25,0.1) + 
+  labs(x = "heat shock to 37C from", y = "correlation coefficient") +
+  scale_x_discrete(labels=c("hs_17to37_20min" = "17C", "hs_21to37_20min" = "21C","hs_25to37_20min" = "25C","hs_29to37_20min" = "29C", "hs_33to37_20min" = "33C")) + 
+  theme(text = element_text(size=20))
 ```
 
 ### Plot the distribution of the motifs with high coefficient
@@ -246,6 +243,19 @@ grid.arrange(
   ggplot(fullTable_Gasch_factor,aes(x=TGTAAATA,y=hs_17to37_20min)) + geom_violin() + geom_point(),
   ncol=2
   )
+```
+
+### Compare the frequency data between two similar motifs
+Another point is that `TGTATAWT` is very likely to be a subset of `UGUAHMNUA`. The only difference between them is the A ending of the second motif. After comparing the frequency of them in each gene we could probably say that `UGUAHMNUA` and `TGTATAWT` are two distinguished sequence motifs since there are 228  genes contain more `UGUAHMNUA` than `TGTATAWT` and 155 genes contain more `TGTATAWT` than `UGUAHMNUA`.
+```{r}
+# the number of genes contain more UGUAHMNUA than TGTATAWT:
+sum((fullTable_Gasch$UGUAHMNUA - fullTable_Gasch$TGTATAWT)>0)
+# the number of genes contain more TGTATAWT than UGUAHMNUA:
+sum((fullTable_Gasch$UGUAHMNUA - fullTable_Gasch$TGTATAWT)<0)
+# the number of genes contain UGUAHMNUA
+sum(fullTable_Gasch$UGUAHMNUA>0)
+# the number of genes contain TGTATAWT
+sum(fullTable_Gasch$TGTATAWT>0)
 ```
 
 
@@ -348,13 +358,18 @@ grid.arrange(
     geom_point(),
   ggplot(fullTable_Gasch_factor,aes(x=TTTTCTAGGDD,y=hs_17to37_20min)) + geom_violin() +
     geom_point(),
-  ggplot(fullTable_Gasch_factor,aes(x=WWTMGTATATTGTMA,y=hs_17to37_20min)) + geom_violin() +
+  ggplot(fullTable_Gasch_factor,aes(x=TGAGGGCTA,y=hs_17to37_20min)) + geom_violin() +
     geom_point(),
   ggplot(fullTable_Gasch_factor,aes(x=RAGGAGACGT,y=hs_17to37_20min)) + geom_violin() +
     geom_point(),
   ncol = 2
 )
 
+```
+
+### check t-value and p_value:
+```{r}
+lm_17to37
 ```
 
 
@@ -499,7 +514,80 @@ As Gasch's study mentioned:
 Only part of the environment changes initiate ESR. heat-shock from 25°C to 37°C is one of them. Gene expression levels under a non-ESR-initiated environmental change may probably be influenced by different motifs. Maybe it's worth to look into another group of environmental conditions?
 
 
-# Explore the correlation between motifs frequency and expression level under of steady-state under certain temperature
+
+
+
+
+# Compare the correlation between heat-shock and cool down
+
+***
+
+### Picking a group of heat-shock related environment condition 
+
+```{r}
+names_temperature_condition = vector(mode="character", length=5)
+names_temperature_condition[1] = "hs_15min_hs-1"
+names_temperature_condition[2] = "hs_30min_hs-1"
+names_temperature_condition[3] = "hs_40min_hs-1"
+names_temperature_condition[4] = "hs_60min_hs-1"
+names_temperature_condition[5] = "hs_80min_hs-1"
+
+```
+
+```{r fig.width=15}
+summary(fullTable_Gasch[names_temperature_condition])
+```
+
+
+### Calculate the correlation coefficient
+At this step, we get a data frame that each row represent the correlation coefficients of a motif under these environmental conditions
+```{r echo=FALSE}
+# compute correlation coefficient
+motif_overview <- as.data.frame(
+  cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
+
+# compute mean
+motif_overview$R_mean <- rowMeans(motif_overview[names_temperature_condition[1:5]])
+
+```
+
+a peek of the dataset:
+```{r}
+head(motif_overview)
+summary(motif_overview)
+```
+
+  
+### Plot coefficient of each motif against each heat-shock related environment condition
+There are four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. 
+
+
+```{r echo=FALSE, fig.width=15, fig.height=12}
+ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn)) + 
+  labs(x = "environment condition", y = "correlation coefficient") + 
+  ggtitle('motifs correlation coefficient against a group of heat-shock environment condition')
+```
+
+### Plot the four motifs with significant magnitude of correlation coefficient
+```{r, echo=FALSE, fig.width=10, fig.height=7}
+## plot motifs with high correlation coefficient
+ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn)) + 
+  ylim(-0.3,0.1) + 
+  labs(x = "after simple heat shock", y = "correlation coefficient") +
+  scale_x_discrete(labels=c("hs_15min_hs-1" = "15min", "hs_30min_hs-1" = "30min","hs_40min_hs-1" = "40min","hs_60min_hs-1" = "60min","hs_80min_hs-1" = "80min")) + 
+  theme(text = element_text(size=20))
+
+```
+
+
+
+
+
+# Explore the correlation under combination stress of heat shock
 ***
 ### Calculate correlation coefficient and plot them
 A group of steady state are selected:
@@ -523,21 +611,14 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 
 ```{r}
 # pick a group of temperature condition
-names_temperature_condition = vector(mode="character", length=7)
-names_temperature_condition[1] = "steady_state_15C_ct-2"
-names_temperature_condition[2] = "steady_state_17C_ct-2"
-names_temperature_condition[3] = "steady_state_21C_ct-2"
-names_temperature_condition[4] = "steady_state_25C_ct-2"
-names_temperature_condition[5] = "steady_state_29C_ct-2"
-names_temperature_condition[6] = "steady_state_33C_ct-2"
-names_temperature_condition[7] = "steady_state_36C_ct-2"
+names_temperature_condition = vector(mode="character", length=3)
+names_temperature_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+names_temperature_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+names_temperature_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
 
 # compute correlation coefficient
 motif_overview_steady_temperature <- as.data.frame(
   cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
-
-# compute mean
-motif_overview_steady_temperature$R_mean <- rowMeans(motif_overview_steady_temperature[names_temperature_condition[1:5]])
 ```
 
 
@@ -558,7 +639,9 @@ motif_temperature_sensitive = c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA')
 
 ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
-  labs(x = "environment condition", y = "correlation coefficient")
+  labs(x = "after heat shock with sorbitol", y = "correlation coefficient")+
+  scale_x_discrete(labels=c("29C(1M_sorbitol)~33C(1M_sorbitol)_05min" = "5min", "29C(1M_sorbitol)~33C(1M_sorbitol)_15min" = "15min","29C(1M_sorbitol)~33C(1M_sorbitol)_30min" = "30min")) + 
+  theme(text = element_text(size=20))
 ```
 
 ### correlation coefficient of the 6 weak linear-related motifs
@@ -578,4 +661,67 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_t
        aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
   labs(x = "environment condition", y = "correlation coefficient")
 ```
+
+
+
+
+
+
+
+
+# Explore the correlation between motifs frequency and expression level under a environment change that won't cause ESR.
+
+***
+
+### Picking a group of heat-shock reversed environment condition 
+
+```{r}
+names_temperature_condition = vector(mode="character", length=5)
+names_temperature_condition[1] = "hs_37to25_15min"
+names_temperature_condition[2] = "hs_37to25_30min"
+names_temperature_condition[3] = "hs_37to25_45min"
+names_temperature_condition[4] = "hs_37to25_60min"
+names_temperature_condition[5] = "hs_37to25_90min"
+
+```
+
+
+### Calculate the correlation coefficient
+At this step, we get a data frame that each row represent the correlation coefficients of a motif under these environmental conditions
+```{r echo=FALSE}
+# compute correlation coefficient
+motif_overview <- as.data.frame(
+  cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
+
+# compute mean
+motif_overview$R_mean <- rowMeans(motif_overview[names_temperature_condition[1:5]])
+
+```
+
+  
+### Plot coefficient of each motif against each heat-shock related environment condition
+
+```{r echo=FALSE, fig.width=15, fig.height=12}
+ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn)) + 
+  labs(x = "environment condition", y = "correlation coefficient") + 
+  ggtitle('motifs correlation coefficient against a group of heat-shock environment condition')
+```
+
+### Plot the four motifs with significant magnitude of correlation coefficient
+```{r, echo=FALSE, fig.width=10, fig.height=7}
+## plot motifs with high correlation coefficient
+ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
+       aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.1,0.2) + 
+  labs(x = "after cooling from 37C to 25C", y = "correlation coefficient")+
+  scale_x_discrete(labels=c("hs_37to25_15min" = "15min", "hs_37to25_30min" = "30min","hs_37to25_45min" = "45min","hs_37to25_60min" = "60min","hs_37to25_90min" = "90min")) + 
+  theme(text = element_text(size=20))
+
+
+```
+
+
+
+
 

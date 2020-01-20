@@ -1,0 +1,300 @@
+---
+title: "hanqin_group_lasso"
+author: "Hanqin Du"
+date: "2020/1/11"
+output: html_document
+---
+
+
+
+```{r set work space for r, eval=FALSE, echo=FALSE}
+par(mfrow=c(1,1))
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+getwd()
+```
+
+
+
+# prepare data
+***
+
+### Load library
+Load library for data frame organization, training linear model and plotting
+```{r load library, results='hide', message=FALSE, echo=FALSE}
+library(data.table)
+library(tidyverse)
+library(lmodel2)
+library(splitstackshape)
+library(gridExtra)
+library(glmnet)
+```
+
+### Load function
+```{r results='hide', message=FALSE, echo=FALSE}
+strReverse <- function(x)
+        sapply(lapply(strsplit(x, NULL), rev), paste, collapse="")
+  
+plot_labels = function(labels, ylim){
+  plot(1:length(labels)[1], type = 'n', xlab="",ylab="coefficient",xaxt="n",xlim = c(0.5,length(labels)[1]+0.5), ylim = ylim)+
+    axis(side=1,at=1:length(labels)[1],labels=labels) + abline(h=0, col="grey")
+}
+
+plot_points <- function(data, color){
+  points(x = 1:dim(data)[1],y = data,pch = 16,col = color)
+}
+
+plot_line <- function(data, color){
+  lines(x = 1:dim(data)[1], y = data, pch = 16, col = color)
+}
+
+range_coe <- function(model_mgaussian){
+  n = length(model_mgaussian$beta)
+  minimum = 0
+  maximum = 0
+  for (i in (1:n)) {
+    minimum = min(minimum, min(model_mgaussian$beta[[i]]))
+    maximum = max(maximum, max(model_mgaussian$beta[[i]]))
+  }
+  return(c(minimum,maximum))
+}
+
+```
+
+
+### Load Data
+Load 69 published motifs (from Abhi's report) and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
+
+**a problem with Gasch's data: there are three duplicated column called 'hs_00min_hs-2', need to check them in the article**
+```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
+
+#ref datasets for UTRs 
+UTR_raw <- read_rds("../data/Sun_mutation_UTRs.rds")
+  #Get sequences from UTR_raw in a separate vector
+  UTR_3 <- UTR_raw$UTR3_seq
+
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("../data/list_motifs.txt", character())
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+
+# load Gasch's data
+expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt", 
+                       locale = locale(decimal = ","))
+
+# convert all the expression data to number
+for (i in names(expressionLevel_Gasch)[3:175]) {
+  expressionLevel_Gasch[[i]] <- as.double(as.character(expressionLevel_Gasch[[i]]))
+}
+
+```
+
+### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+By converting all the motifs to regular expression, we are able to construct motifs frequency matrix which describes the frequency of 69 motifs among 4388 different genes.
+```{r construct motif frequency, echo=FALSE}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs <- tibble(geneName = UTR_raw$genename)
+
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+names_motifs_all <- names(ref_motifs)[2:length(ref_motifs)]
+```
+
+
+
+
+### Merge motif frequency matrix with Gasch's data
+Finally, we inner join the motif frequency matrix with Gasch's data and get the data frame we are going to explore. Each row represented data from one of the 4284 genes (since we have carried out inner join, only the genes shown in both tables are kept). There are 245 columns in total. 3 of them describe the basic information (short and formal name) of the gene represented by the row. 173 of them show how the gene expression level change under the certain environment condition and the other 69 of them respect the frequency of the 69 published motifs on the 3’UTR.
+```{r merge motifs frequency with gasch data, echo=FALSE}
+
+# merge motifs
+fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
+
+# convert type of motifs frequency to factor for violin plotting
+fullTable_Gasch_double = fullTable_Gasch
+for(i in names_motifs_all){
+    fullTable_Gasch_double[[i]] <- as.double(as.character(fullTable_Gasch_double[[i]]))
+}
+
+```
+
+
+### Remove motifs with frequency 0
+```{r echo=FALSE}
+motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
+remove_list = NULL
+
+for (i in names(motifs_count_sum)){
+  if (motifs_count_sum[[i]] == 0){
+    remove_list <- c(remove_list,i)
+  }
+}
+
+names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
+```
+
+
+
+
+# multi-task learning
+***
+
+
+### absic idea about glmnet group lasso
+
+reference:
+- https://www.rdocumentation.org/packages/glmnet/versions/3.0-2/topics/glmnet
+- https://cran.r-project.org/web/packages/glmnet/glmnet.pdf
+- https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html
+- Jerome Friedman et al, A note on the group lasso and a sparse group lasso
+- https://en.wikipedia.org/wiki/Lasso_(statistics)#Group_lasso
+- https://www.zhihu.com/question/38121173
+- https://zhuanlan.zhihu.com/p/46999826
+- https://cosx.org/2016/10/data-mining-1-lasso/
+- How to interpret cv.glmnet() plot?: https://stats.stackexchange.com/questions/253963/how-to-interpret-cv-glmnet-plot
+
+
+
+> Glmnet is a package that fits a generalized linear model via penalized maximum likelihood. The regularization path is computed for the lasso or elasticnet penalty at a grid of values for the regularization parameter lambda.
+
+$$
+\min_{\beta_0,\beta} \frac{1}{N} \sum_{i=1}^{N} w_i l(y_i,\beta_0+\beta^T x_i) + \lambda\left[(1-\alpha)||\beta||_2^2/2 + \alpha ||\beta||_1\right],
+$$
+Where l(y,η) is the negative log-likelihood contribution for observation i.
+
+accroding to the introduction of glmnet, the penalty on the coefficient vector for variable j is
+$$
+(1-\alpha)/2||\beta_j||_2^2+\alpha||\beta_j||_1.
+$$
+
+Setting `family="mgaussian"` allows a multi-response gaussian model to be fit, using a "group -lasso" penalty on the coefficients for each variable.
+Setting `type.multinomial="grouped"` allows the same penalty as `family="mgaussian"`, which is:
+$$
+(1-\alpha)/2||\beta_j||_2^2+\alpha||\beta_j||_2.
+$$
+when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet. In group lasso, we summing all the penalty
+
+
+
+
+### test glmnet group lasso with a group of heat-shock conditions
+alpha = 1 for group lasso
+
+
+```{r}
+names_temperature_condition = vector(mode="character", length=5)
+names_temperature_condition[1] = "hs_15min_hs-1"
+names_temperature_condition[2] = "hs_30min_hs-1"
+names_temperature_condition[3] = "hs_40min_hs-1"
+names_temperature_condition[4] = "hs_60min_hs-1"
+names_temperature_condition[5] = "hs_80min_hs-1"
+
+x_hs = as.matrix(fullTable_Gasch_double[names_motifs_valid])
+y_hs = as.matrix(fullTable_Gasch_double[names_temperature_condition])
+
+```
+
+
+how to deal with the N/A number in independent variable(x) and dependent variable(y)?
+> it is easy to ignore N/A in x by setting them as 0. However, for dependent variable, we would prefer to ingore the loss cause by that data. Setting it as 0 won't have the same effect. Temporary, we set it as 0 and try to improve it latter.
+
+
+```{r echo=False}
+x_hs[is.na(x_hs)]<-0.0
+y_hs[is.na(y_hs)]<-0.0
+
+cv_models_hs = cv.glmnet(x_hs, y_hs, family = "mgaussian")
+```
+
+
+### pick lambda with 10-fold cross validation
+
+```{r echo=FALSE}
+plot(cv_models_hs)
+```
+
+there are two different lambdas `lambda.min` and `lambda.1se`, which one to used?
+`lambda.min` is the value of lambda that gives minimum cvm.
+`lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum.
+
+
+### training models with the lambda value that gives minimum loss
+```{r}
+models_hs = glmnet(x_hs, y_hs, family = "mgaussian", lambda = cv_models_hs$lambda.min)
+
+```
+
+
+### compare their coefficient
+```{r echo=FALSE}
+{
+  plot_labels(names_motifs_valid, range_coe(models_hs))
+  plot_points(models_hs$beta$`hs_15min_hs-1`,'orange')
+  plot_points(models_hs$beta$`hs_30min_hs-1`,'red')
+  plot_points(models_hs$beta$`hs_40min_hs-1`,'purple')
+  plot_points(models_hs$beta$`hs_60min_hs-1`,'blue')
+  plot_points(models_hs$beta$`hs_80min_hs-1`,'chartreuse4')
+  legend('bottomleft', legend=c('15min', '30min','40min','60min','80min'), col=c('orange', 'red', 'purple', 'blue', 'chartreuse4'), lty = 1)
+}
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_hs))
+  plot_line(models_hs$beta$`hs_15min_hs-1`,'orange')
+  plot_line(models_hs$beta$`hs_30min_hs-1`,'red')
+  plot_line(models_hs$beta$`hs_40min_hs-1`,'purple')
+  plot_line(models_hs$beta$`hs_60min_hs-1`,'blue')
+  plot_line(models_hs$beta$`hs_80min_hs-1`,'chartreuse4')
+  legend("bottomleft", legend=c("15min", "30min","40min","60min","80min"),col=c("orange", "red", "purple", "blue", "chartreuse4"), lty = 1, cex=0.8)
+}
+
+```
+
+
+
+meaning of the number above?
+
+eaning of the error bar?
+> Confidence intervals represent error estimates for the loss metric (red dots). They're computed using CV. The vertical lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates.
+
+
+how the mse is calculated?
+> The error is accumulated, and the average error and standard deviation over the folds is computed
+
+
+why alpha = 1?
+> When alpha=1 this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet.
+
+
+how to improve model?
+> We should solve the problem we have in y's N/A value. There could be two way to deal with it. First, we fill up the N/A value by referencing other value. Second, we adjust the glmnet to ignore data with N/A y value.
+> We may need to consider the relatively position of motifs
+> We may need to consider the coperation between two RNA binding proteins or between RNA binding proteins and secondary structure
+> May run cv.glmnet many times to reduce randomness
+> adjust dependended value?
+> more data?
+> should we reflect the motifs and match the sequence?
+
+
+
+explain what the model tell us about these motifs
+
+
+
+
+
+markdown report: what learning from existing motifs
+fitting model - use the model as the central part, indicate how to improve and learning from it
+feature selection: which motifs make effort
+

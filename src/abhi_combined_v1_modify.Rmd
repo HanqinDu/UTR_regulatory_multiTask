@@ -15,8 +15,8 @@ editor_options:
 library(tidyverse)
 library(glmnet)
 library(lmodel2)
-
 library(ggplot2)
+
 #theme for ggplot  
   theme_coding <- function(...){
   theme_bw()+
