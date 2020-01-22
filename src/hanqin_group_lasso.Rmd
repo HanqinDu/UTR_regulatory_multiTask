@@ -40,22 +40,36 @@ plot_labels = function(labels, ylim){
 }
 
 plot_points <- function(data, color){
-  points(x = 1:dim(data)[1],y = data,pch = 16,col = color)
+  points(x = 1:length(data)[1],y = data,pch = 16,col = color)
 }
 
 plot_line <- function(data, color){
-  lines(x = 1:dim(data)[1], y = data, pch = 16, col = color)
+  lines(x = 1:length(data)[1], y = data, pch = 16, col = color)
 }
 
-range_coe <- function(model_mgaussian){
-  n = length(model_mgaussian$beta)
+range_coe <- function(beta_list){
+  n = length(beta_list)
   minimum = 0
   maximum = 0
   for (i in (1:n)) {
-    minimum = min(minimum, min(model_mgaussian$beta[[i]]))
-    maximum = max(maximum, max(model_mgaussian$beta[[i]]))
+    minimum = min(minimum, min(beta_list[[i]]))
+    maximum = max(maximum, max(beta_list[[i]]))
   }
   return(c(minimum,maximum))
+}
+
+mask_characters <- function(c1,c2){
+  n = length(c1)
+  m = length(c2)
+  output = c()
+  for (i in 1:n) {
+    for (j in 1:m) {
+      if(c1[i] == c2[j]){
+        output = append(output,i)
+      }
+    }
+  }
+  return(output)
 }
 
 ```
@@ -82,7 +96,7 @@ expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt
                        locale = locale(decimal = ","))
 
 # convert all the expression data to number
-for (i in names(expressionLevel_Gasch)[3:175]) {
+for (i in names(expressionLevel_Gasch)[3:176]) {
   expressionLevel_Gasch[[i]] <- as.double(as.character(expressionLevel_Gasch[[i]]))
 }
 
@@ -155,6 +169,7 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 ### absic idea about glmnet group lasso
 
 reference:
+
 - https://www.rdocumentation.org/packages/glmnet/versions/3.0-2/topics/glmnet
 - https://cran.r-project.org/web/packages/glmnet/glmnet.pdf
 - https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html
@@ -165,6 +180,11 @@ reference:
 - https://cosx.org/2016/10/data-mining-1-lasso/
 - How to interpret cv.glmnet() plot?: https://stats.stackexchange.com/questions/253963/how-to-interpret-cv-glmnet-plot
 
+
+defination of p-norm
+$$
+||x||_p := (\sum ^n_{i=1}|x_i|^p)^{1\over p}
+$$
 
 
 > Glmnet is a package that fits a generalized linear model via penalized maximum likelihood. The regularization path is computed for the lasso or elasticnet penalty at a grid of values for the regularization parameter lambda.
@@ -187,6 +207,14 @@ $$
 when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet. In group lasso, we summing all the penalty
 
 
+### compare L1 and L2
+
+- L1 could have more than one optimal solution while L2 only has one
+- L1 is more robust. no sensitive to extreme value
+- L1 give more 0 to not important features (better for feature selection)
+- L2 is easier to calculate
+
+
 
 
 ### test glmnet group lasso with a group of heat-shock conditions
@@ -195,11 +223,13 @@ alpha = 1 for group lasso
 
 ```{r}
 names_temperature_condition = vector(mode="character", length=5)
-names_temperature_condition[1] = "hs_15min_hs-1"
-names_temperature_condition[2] = "hs_30min_hs-1"
-names_temperature_condition[3] = "hs_40min_hs-1"
-names_temperature_condition[4] = "hs_60min_hs-1"
-names_temperature_condition[5] = "hs_80min_hs-1"
+names_temperature_condition[1] = "hs_05min_hs-1"
+names_temperature_condition[2] = "hs_10min_hs-1"
+names_temperature_condition[3] = "hs_15min_hs-1"
+names_temperature_condition[4] = "hs_30min_hs-1"
+names_temperature_condition[5] = "hs_40min_hs-1"
+names_temperature_condition[6] = "hs_60min_hs-1"
+names_temperature_condition[7] = "hs_80min_hs-1"
 
 x_hs = as.matrix(fullTable_Gasch_double[names_motifs_valid])
 y_hs = as.matrix(fullTable_Gasch_double[names_temperature_condition])
@@ -211,9 +241,12 @@ how to deal with the N/A number in independent variable(x) and dependent variabl
 > it is easy to ignore N/A in x by setting them as 0. However, for dependent variable, we would prefer to ingore the loss cause by that data. Setting it as 0 won't have the same effect. Temporary, we set it as 0 and try to improve it latter.
 
 
-```{r echo=False}
-x_hs[is.na(x_hs)]<-0.0
-y_hs[is.na(y_hs)]<-0.0
+
+
+
+```{r}
+x_hs[is.na(x_hs)] = 0.0
+y_hs[is.na(y_hs)] = 0.0
 
 cv_models_hs = cv.glmnet(x_hs, y_hs, family = "mgaussian")
 ```
@@ -229,43 +262,7 @@ there are two different lambdas `lambda.min` and `lambda.1se`, which one to used
 `lambda.min` is the value of lambda that gives minimum cvm.
 `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum.
 
-
-### training models with the lambda value that gives minimum loss
-```{r}
-models_hs = glmnet(x_hs, y_hs, family = "mgaussian", lambda = cv_models_hs$lambda.min)
-
-```
-
-
-### compare their coefficient
-```{r echo=FALSE}
-{
-  plot_labels(names_motifs_valid, range_coe(models_hs))
-  plot_points(models_hs$beta$`hs_15min_hs-1`,'orange')
-  plot_points(models_hs$beta$`hs_30min_hs-1`,'red')
-  plot_points(models_hs$beta$`hs_40min_hs-1`,'purple')
-  plot_points(models_hs$beta$`hs_60min_hs-1`,'blue')
-  plot_points(models_hs$beta$`hs_80min_hs-1`,'chartreuse4')
-  legend('bottomleft', legend=c('15min', '30min','40min','60min','80min'), col=c('orange', 'red', 'purple', 'blue', 'chartreuse4'), lty = 1)
-}
-
-{
-  plot_labels(names_motifs_valid, range_coe(models_hs))
-  plot_line(models_hs$beta$`hs_15min_hs-1`,'orange')
-  plot_line(models_hs$beta$`hs_30min_hs-1`,'red')
-  plot_line(models_hs$beta$`hs_40min_hs-1`,'purple')
-  plot_line(models_hs$beta$`hs_60min_hs-1`,'blue')
-  plot_line(models_hs$beta$`hs_80min_hs-1`,'chartreuse4')
-  legend("bottomleft", legend=c("15min", "30min","40min","60min","80min"),col=c("orange", "red", "purple", "blue", "chartreuse4"), lty = 1, cex=0.8)
-}
-
-```
-
-
-
-meaning of the number above?
-
-eaning of the error bar?
+meaning of the error bar?
 > Confidence intervals represent error estimates for the loss metric (red dots). They're computed using CV. The vertical lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates.
 
 
@@ -277,24 +274,277 @@ why alpha = 1?
 > When alpha=1 this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet.
 
 
-how to improve model?
-> We should solve the problem we have in y's N/A value. There could be two way to deal with it. First, we fill up the N/A value by referencing other value. Second, we adjust the glmnet to ignore data with N/A y value.
-> We may need to consider the relatively position of motifs
-> We may need to consider the coperation between two RNA binding proteins or between RNA binding proteins and secondary structure
-> May run cv.glmnet many times to reduce randomness
-> adjust dependended value?
-> more data?
-> should we reflect the motifs and match the sequence?
+
+### training models with the lambda value that gives minimum loss
+```{r}
+models_hs = glmnet(x_hs, y_hs, family = "mgaussian", lambda = cv_models_hs$lambda.min)
+```
+
+
+### compare their coefficient
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(models_hs$beta))
+  plot_points(models_hs$beta$`hs_05min_hs-1`,'black')
+  plot_points(models_hs$beta$`hs_10min_hs-1`,'gray15')
+  plot_points(models_hs$beta$`hs_15min_hs-1`,'gray30')
+  plot_points(models_hs$beta$`hs_30min_hs-1`,'gray45')
+  plot_points(models_hs$beta$`hs_40min_hs-1`,'gray60')
+  plot_points(models_hs$beta$`hs_60min_hs-1`,'gray75')
+  plot_points(models_hs$beta$`hs_80min_hs-1`,'gray90')
+  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+}
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_hs$beta))
+  plot_line(models_hs$beta$`hs_05min_hs-1`,'black')
+  plot_line(models_hs$beta$`hs_10min_hs-1`,'gray15')
+  plot_line(models_hs$beta$`hs_15min_hs-1`,'gray30')
+  plot_line(models_hs$beta$`hs_30min_hs-1`,'gray45')
+  plot_line(models_hs$beta$`hs_40min_hs-1`,'gray60')
+  plot_line(models_hs$beta$`hs_60min_hs-1`,'gray75')
+  plot_line(models_hs$beta$`hs_80min_hs-1`,'gray90')
+  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+}
+
+```
+
+### compare the coefficients with the linear model without group lasso
+```{r}
+x_hs = as.matrix(fullTable_Gasch_double[names_motifs_valid])
+y_hs = as.matrix(fullTable_Gasch_double$`hs_15min_hs-1`)
+x_hs[is.na(x_hs)]<-0.0
+y_hs[is.na(y_hs)]<-0.0
+
+model_hs = glmnet(x_hs, y_hs, family = "gaussian", lambda = 0)
+```
+
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(list(models_hs$beta[[1]], model_hs$beta)))
+  plot_line(model_hs$beta@x,'blue')
+  plot_line(models_hs$beta$`hs_15min_hs-1`,'red')
+  legend('bottomleft', legend=c('with lasso', 'without lasso'), col=c('red','blue'), lty = 1)
+}
+
+
+```
+
+
+# multi-task learning on all 173 environmental stress
+***
+
+```{r}
+names_condition = colnames(expressionLevel_Gasch, do.NULL = TRUE, prefix = "col")[4:176]
+
+x = as.matrix(fullTable_Gasch_double[names_motifs_valid])
+y = as.matrix(fullTable_Gasch_double[names_condition])
+
+x[is.na(x)]<-0.0
+y[is.na(y)]<-0.0
+
+cv_models_all = cv.glmnet(x, y, family = "mgaussian")
+```
+
+
+### pick lambda with 10-fold cross validation
+```{r}
+plot(cv_models_all)
+```
+
+### training models with the lambda value that gives minimum loss
+```{r}
+models_all = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
+```
+
+### compare with the base line
+```{r}
+fullTable_Gasch_na_to_zero = fullTable_Gasch
+fullTable_Gasch_na_to_zero[is.na(fullTable_Gasch_na_to_zero)] <- 0
+sum(sapply(fullTable_Gasch_na_to_zero[4:176], var))
+```
+
+
+### compare their coefficient
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_points(models_all$beta$`hs_05min_hs-1`,'black')
+  plot_points(models_all$beta$`hs_10min_hs-1`,'gray15')
+  plot_points(models_all$beta$`hs_15min_hs-1`,'gray30')
+  plot_points(models_all$beta$`hs_30min_hs-1`,'gray45')
+  plot_points(models_all$beta$`hs_40min_hs-1`,'gray60')
+  plot_points(models_all$beta$`hs_60min_hs-1`,'gray75')
+  plot_points(models_all$beta$`hs_80min_hs-1`,'gray90')
+  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+}
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_line(models_all$beta$`hs_05min_hs-1`,'black')
+  plot_line(models_all$beta$`hs_10min_hs-1`,'gray15')
+  plot_line(models_all$beta$`hs_15min_hs-1`,'gray30')
+  plot_line(models_all$beta$`hs_30min_hs-1`,'gray45')
+  plot_line(models_all$beta$`hs_40min_hs-1`,'gray60')
+  plot_line(models_all$beta$`hs_60min_hs-1`,'gray75')
+  plot_line(models_all$beta$`hs_80min_hs-1`,'gray90')
+  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+}
+
+```
+
+### key coefficient
+recall that the four motifs we found with high correlation coefficient are `UGUAHMNUA`, `ATATTC`, `TGTATAWT`, and `TGTAAATA`. Only two of them are here.
+```{r echo=FALSE, fig.height=12, fig.width=14}
+names_motifs_key = c("UGUAHMNUA", "UKWCGRGGN", "CGGGTAAG","TGTATAWT","TTTTCTAGGDD","WAAAGGTAGTAAGT","TGAGGGCTA")
+position_motifs_key = mask_characters(names_motifs_valid, names_motifs_key)
+
+
+{
+  plot_labels(names_motifs_key, range_coe(models_all$beta))
+  plot_points(models_all$beta$`hs_05min_hs-1`[position_motifs_key],'black')
+  plot_points(models_all$beta$`hs_10min_hs-1`[position_motifs_key],'gray15')
+  plot_points(models_all$beta$`hs_15min_hs-1`[position_motifs_key],'gray30')
+  plot_points(models_all$beta$`hs_30min_hs-1`[position_motifs_key],'gray45')
+  plot_points(models_all$beta$`hs_40min_hs-1`[position_motifs_key],'gray60')
+  plot_points(models_all$beta$`hs_60min_hs-1`[position_motifs_key],'gray75')
+  plot_points(models_all$beta$`hs_80min_hs-1`[position_motifs_key],'gray90')
+  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+}
+
+```
 
 
 
-explain what the model tell us about these motifs
+### Analysis the Bias
+The bias of each model shows the change of expression level that cannot be explained by these motifs
+here we calculate the percentage of it against the mean of change in expression level to estimate how much of the regulation effect cannot be expalined by the model. The estimation is base on many assumptions and could be very ambiguous. 
+
+$$
+bias\over mean( expression\ level)
+$$
 
 
+```{r} 
+models_all$a0/colMeans(fullTable_Gasch_double[names_condition], na.rm = TRUE)
+```
+
+
+### compare coefficient under different type of environmental stress
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_points(models_all$beta$`hs_15min_hs-1`,'red')
+  plot_points(models_all$beta$`hs_37to25_15min`,'blue')
+  legend('bottomleft', legend=c('heat shock','cool down'), col=c('red','blue'), lty = 1)
+}
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_line(models_all$beta$`hs_15min_hs-1`,'red')
+  plot_line(models_all$beta$`hs_37to25_15min`,'blue')
+  legend('bottomleft', legend=c('heat shock','cool down'), col=c('red','blue'), lty = 1)
+}
+
+```
+
+
+
+### compare coefficient of heat shock with and without sorbital - 5min
+check how the `additional effect` mension by Gasch shown in the model
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_points(models_all$beta$`hs_29to33_05min`,'red')
+  plot_points(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_05min`,'blue')
+  plot_points(models_all$beta$`1M_sorbitol_05min`,'forestgreen')
+  legend('bottomleft', legend=c('hs with sorbitol','hs without sorbitol','sorbitol without hs'), col=c('red','blue','forestgreen'), lty = 1)
+}
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_line(models_all$beta$`hs_29to33_05min`,'red')
+  plot_line(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_05min`,'blue')
+  plot_line(models_all$beta$`1M_sorbitol_05min`,'forestgreen')
+  legend('bottomleft', legend=c('hs with sorbitol','hs without sorbitol','sorbitol without hs'), col=c('red','blue','forestgreen'), lty = 1)
+}
+```
+
+
+
+
+### compare coefficient of heat shock with and without sorbital - 15min
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_points(models_all$beta$`hs_29to33_15min`,'red')
+  plot_points(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`,'blue')
+  plot_points(models_all$beta$`1M_sorbitol_15min`,'forestgreen')
+  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
+}
+
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_line(models_all$beta$`hs_29to33_15min`,'red')
+  plot_line(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`,'blue')
+  plot_line(models_all$beta$`1M_sorbitol_15min`,'forestgreen')
+  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
+}
+```
+
+
+
+
+
+### compare coefficient of heat shock with and without sorbital - 30min
+```{r echo=FALSE, fig.height=12, fig.width=12}
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_points(models_all$beta$`hs_29to33_30min`,'red')
+  plot_points(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_30min`,'blue')
+  plot_points(models_all$beta$`1M_sorbitol_30min`,'forestgreen')
+  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
+}
+
+
+{
+  plot_labels(names_motifs_valid, range_coe(models_all$beta))
+  plot_line(models_all$beta$`hs_29to33_30min`,'red')
+  plot_line(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_30min`,'blue')
+  plot_line(models_all$beta$`1M_sorbitol_30min`,'forestgreen')
+  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
+}
+```
+
+
+
+
+### how to improve model?
+
+- We should solve the problem we have in y's N/A value. There could be two way to deal with it. First, we fill up the N/A value by referencing other value. Second, we adjust the glmnet to ignore data with N/A y value.
+- We may need to consider the relatively position of motifs
+- We may need to consider the coperation between two RNA binding proteins or between RNA binding proteins and secondary structure
+- May run cv.glmnet many times to reduce randomness
+- adjust dependended value?
+- more data?
+- should we reflect the motifs and match the sequence?
+- compare similar model to make the conclusion more reliable
+
+
+### time table
+
+- week 3: Apply basis function to explore if the effect of motifs combination. Analyse the models to quantify how the motifs affect regulation
+- week 4: Expand the dataset.
+- week 5: prepare for group meeting
+- week 6-9: more attempt and improvement
+- week 10-11: final report
+- week 12-14: final presentations 
 
 
 
 markdown report: what learning from existing motifs
+explain what the model tell us about these motifs
 fitting model - use the model as the central part, indicate how to improve and learning from it
 feature selection: which motifs make effort
 
