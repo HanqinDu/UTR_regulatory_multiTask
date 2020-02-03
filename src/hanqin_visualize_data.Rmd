@@ -9,11 +9,16 @@ editor_options:
 
 
 ```{r set work space for r, eval=FALSE, echo=FALSE}
-par(mfrow=c(1,1))
+# set work space for Rstudio
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-getwd()
 ```
 
+# Introduction
+Gene expression is the process through which cells generate diversity and resilience to environmental changes. It consists of two steps: transcription, where an intermediate molecule (mRNA) is produced from the DNA, and translation of mRNA into protein. The rate of transcription and translation can be regulated by regulatory elements acting in both cis and trans. 3'UTR, 5'UTR, and promoter are known as powerful regulatory processes that determine the rate of mRNA synthesis and decay.
+
+In this project, we are interested in using these cis-regulatory features to predict multidimensional output that indicates how the mRNA abundance change in multiple environmental conditions. Since our goal is to quantify the effect of different elements, we should avoid clustering and go straight from element to expression pattern. Linear models with multidimensional lasso (known as an algorithm of multi-task learning) which is already implemented in the glmnet package should be a good start.
+
+This is the first part of this project. Before multi-task learning, we would like to investigate the data and evaluate if it is reasonable to apply group lasso on them.
 
 
 # prepare data
@@ -44,7 +49,6 @@ plot_mean_deviation <- function(dataset,label,mean,deviation){
   lines(rbind(1:dim(dataset)[1],1:dim(dataset)[1],NA),rbind(dataset[[mean]]-1.96*dataset[[deviation]],dataset[[mean]]+1.96*dataset[[deviation]],NA))
   axis(side=1,at=1:dim(dataset)[1],labels=dataset[[label]])
 }
-
 
 ```
 
@@ -118,20 +122,26 @@ for(i in names_motifs_all){
 To begin with, we want to investigate the sample size of the data. After summing by columns, we get the total frequency of each motif among all the 4284 genes. The mean is 141 while the median is merely 5, which indicates more than half of the motifs have a very low frequency. It could be difficult to carry out analysis on these low-frequency motifs since a small sample size could led to high uncertainty.
 
 ```{r echo=FALSE}
+# construct the motif frequency table
 motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
-```
 
-summary of the summing frequency:
-```{r echo=FALSE}
+# summary of the table
 summary(motifs_count_sum)
+
+# plot histgram
+hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,30,8000), main = 'histogram of motifs frequency sum')
+
+
 ```
 
-### Drawing histogram:
-```{r}
-hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,50,3000), main = 'histogram of motifs frequency sum')
-```
+### distribution table:
 
-### Draw the table:
+```{r echo=FALSE, results=FALSE}
+length(motifs_count_sum[motifs_count_sum == 0])
+length(motifs_count_sum[motifs_count_sum < 6 & motifs_count_sum > 0])
+length(motifs_count_sum[motifs_count_sum < 21 & motifs_count_sum > 5])
+length(motifs_count_sum[motifs_count_sum > 20])
+```
 
 | Frequency  | number of motifs (n) |
 | ---------- | -------------------- |
@@ -141,13 +151,6 @@ hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,50,3000), main
 | n > 20     | 21                   |
 
 One possible explanation of the huge amount of low-frequency motifs is that it is hard to match exactly the regular expression to the UTR sequence. Another point is, a motif with a significant effect on regulation is reasonable to have a small frequency.
-
-```{r echo=FALSE, results=FALSE}
-length(motifs_count_sum[motifs_count_sum == 0])
-length(motifs_count_sum[motifs_count_sum < 6 & motifs_count_sum > 0])
-length(motifs_count_sum[motifs_count_sum < 21 & motifs_count_sum > 5])
-length(motifs_count_sum[motifs_count_sum > 20])
-```
 
 ### Remove motifs with frequency 0
 There is no way to study motifs with 0 frequency as their correlation coefficient against the expression level should always be 0. Therefore, simply removing them should be reasonable.
@@ -182,16 +185,11 @@ names_temperature_condition[2] = "hs_21to37_20min"
 names_temperature_condition[3] = "hs_25to37_20min"
 names_temperature_condition[4] = "hs_29to37_20min"
 names_temperature_condition[5] = "hs_33to37_20min"
-
-```
-
-```{r fig.width=15}
-summary(fullTable_Gasch[names_temperature_condition])
 ```
 
 
 ### Calculate the correlation coefficient
-At this step, we get a data frame that each row represent the correlation coefficients of a motif under these environmental conditions
+In this step, we get a data frame that each row represent the correlation coefficients of a motif under these environmental conditions
 ```{r echo=FALSE}
 # compute correlation coefficient
 motif_overview <- as.data.frame(
@@ -201,13 +199,6 @@ motif_overview <- as.data.frame(
 motif_overview$R_mean <- rowMeans(motif_overview[names_temperature_condition[1:5]])
 
 ```
-
-a peek of the dataset:
-```{r}
-head(motif_overview)
-summary(motif_overview)
-```
-
   
 ### Plot coefficient of each motif against each heat-shock related environment condition
 There are four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. 
@@ -224,6 +215,7 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_con
 ### Plot the four motifs with significant magnitude of correlation coefficient
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
 ## plot motifs with high correlation coefficient
+test= as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition])
 ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) + 
@@ -301,6 +293,7 @@ Overall, there is not significant problem with this linear model.
 # coefficient from linear model: "hs_17to37_20min"
 par(mfrow=c(2,2))
 plot(lm_17to37)
+print("mean square error:")
 mse(lm_17to37)
 ```
 
@@ -309,6 +302,7 @@ mse(lm_17to37)
 # coefficient from linear model: "hs_25to37_20min"
 par(mfrow=c(2,2))
 plot(lm_25to37)
+print("mean square error:")
 mse(lm_25to37)
 ```
 
@@ -369,20 +363,20 @@ grid.arrange(
 
 ### check t-value and p_value:
 ```{r}
-lm_17to37
+summary(lm_17to37)
 ```
 
 
-# Carry out linear regression with high-frequency motif (>20)
+# Carry out linear regression with high-frequency motif (>5)
 ***
 ### Remove low-frequency motifs to eliminate unexpected influence.
 We are not confident enough to tell whether a low-frequency motif depends linearly on the heat-shock related environment condition. Therefore, we temporarily remove them and carry out linear regression again to see if we may find any other linearly related motifs.
 ```{r ,echo=FALSE}
-# filter out motif with frequency lower than 20
+# filter out motif with frequency lower than 5
 remove_list = NULL
 
 for (i in names(motifs_count_sum)){
-  if (motifs_count_sum[[i]] < 20){
+  if (motifs_count_sum[[i]] < 6){
     remove_list <- c(remove_list,i)
   }
 }
@@ -426,6 +420,7 @@ Similar to the previous one
 ```{r fig.height=12, fig.width=12, warning=FALSE, echo=FALSE}
 par(mfrow=c(2,2))
 plot(lm_17to37)
+print("mean square error:")
 mse(lm_17to37)
 ```
 
@@ -433,6 +428,7 @@ mse(lm_17to37)
 ```{r fig.height=12, fig.width=12, warning=FALSE, echo=FALSE}
 par(mfrow=c(2,2))
 plot(lm_25to37)
+print("mean square error:")
 mse(lm_25to37)
 ```
 
@@ -464,15 +460,15 @@ motifs with relatively low p-value are listed below:
 
 | Motif      | Estimate | Std.Error | t value | Pr(>\|t\|) |
 | ---------- | -------- | --------- | ------- | ---------- |
-| UGUAHMNUA  | -1.052   | 0.084     | -12.445 | <2e-16     |
-| ATATTC     | 0.308    | 0.057     | 5.429   | 5.98e-08   |
-| TGTATAWT   | -0.465   | 0.095     | -4.898  | 1.00e-06   |
-| WUUGUAWUWU | -0.524   | 0.156     | -3.354  | 0.0008     |
-| UAAUAAUW   | -0.247   | 0.083     | -2.991  | 0.0028     |
-| TGTAAATA   | 0.234    | 0.103     | 2.263   | 0.0237     |
-| AAAATAAAG  | -0.572   | 0.281     | -2.035  | 0.0420     |
-| UUUAAUGA   | 0.304    | 0.162     | 1.874   | 0.0610     |
-| TCATGTAT   | -0.324   | 0.207     | -1.564  | 0.1179     |
+| UGUAHMNUA  | -1.054   | 0.085     | -12.369 | <2e-16     |
+| ATATTC     | 0.309    | 0.057     | 5.432   | 5.90e-08   |
+| TGTATAWT   | -0.468   | 0.095     | -4.907  | 9.62e-07   |
+| WUUGUAWUWU | -0.534   | 0.157     | -3.413  | 0.0006     |
+| UAAUAAUW   | -0.250   | 0.083     | -3.025  | 0.0025     |
+| TGTAAATA   | 0.244    | 0.106     | 2.308   | 0.0211     |
+| AAAATAAAG  | -0.568   | 0.281     | -2.018  | 0.0436     |
+| UUUAAUGA   | 0.302    | 0.162     | 1.864   | 0.0624     |
+| TCATGTAT   | -0.327   | 0.207     | -1.580  | 0.1141     |
 
 
 None of the 5 additional motifs has been mentioned in Abhi's report. More tests should be carried out on these motifs for a more general conclusion.
@@ -497,24 +493,6 @@ grid.arrange(
 )
 
 ```
-
-
-# Summary
-***
-we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment conditions provided by Gasch's data and 50 motifs from 69 published motifs (65 experimented motifs and 4 Cheng's motifs). More than half of the motifs has a relatively low frequency. By investigating the corresponding correlation coefficient and carrying out linear regression, we found 4 strong linear-related motifs and 5 weak linear-related motifs. Thus, Only a small fraction of motifs responds to heat-shock related environment stress. 
-
-As Gasch's study mentioned:
-
->the ESR (environment stress respond) is not initiated in response to all environmental changes
-
->Unlike the response to a 25°C to 37°C heat shock, which elicited massive and transient changes in ESR expression, the transition from 37°C to 25°C resulted in a simple rapid transition to the gene expression program characteristic of steady-state growth at 25°C, with essentially no transient features.
-
->The ESR is initiated not only by conditions known to threaten cellular viability, but also by small environmental changes that do not detectably impair viability and growth.
-
-Only part of the environment changes initiate ESR. heat-shock from 25°C to 37°C is one of them. Gene expression levels under a non-ESR-initiated environmental change may probably be influenced by different motifs. Maybe it's worth to look into another group of environmental conditions?
-
-
-
 
 
 
@@ -559,7 +537,6 @@ summary(motif_overview)
 
   
 ### Plot coefficient of each motif against each heat-shock related environment condition
-There are four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. 
 
 
 ```{r echo=FALSE, fig.width=15, fig.height=12}
@@ -587,12 +564,9 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','
 
 
 
-# Explore the correlation under combination stress of heat shock
+# Explore the correlation under combination stresses
 ***
 ### Calculate correlation coefficient and plot them
-A group of steady state are selected:
-
->To measure steady-state expression at each temperature, RNA collected from cells grown continuously at each temperature was also compared directly to RNA from cells grown at 33°C.
 
 ```{r echo=FALSE}
 
@@ -666,14 +640,10 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_t
 
 
 
-
-
-
-# Explore the correlation between motifs frequency and expression level under a environment change that won't cause ESR.
-
+# Explore the correlation between motifs frequency and expression level under hypothermia (reverse of heat shock)
 ***
 
-### Picking a group of heat-shock reversed environment condition 
+### Picking a group of hypothermia environment condition 
 
 ```{r}
 names_temperature_condition = vector(mode="character", length=5)
@@ -720,6 +690,18 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','
 
 
 ```
+
+
+
+
+# Summary
+***
+we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment conditions provided by Gasch's data and 50 motifs from 69 published motifs (65 experimented motifs and 4 Cheng's motifs). More than half of the motifs has a relatively low frequency. By investigating the corresponding correlation coefficient and carrying out linear regression, we found 4 strong linear-related motifs and 5 weak linear-related motifs. Thus, Only a small fraction of motifs responds to heat-shock related environment stress. 
+
+By comparing the correlation coefficient between motifs frequency and expression level change under heat shock, heat shock with sorbitol and hypothermia, we have investigated an opposite relation between the PPC of motifs and expression level change under heat shock and hypothermia and a similar relation between the PPC of motifs and expression level change under heat shock with sorbitol and regular heat shock.
+
+Therefore, we believe it is reasonable to carry out group lasso on this dataset.
+
 
 
 

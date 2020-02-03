@@ -6,20 +6,33 @@ output: html_document
 ---
 
 
-
 ```{r set work space for r, eval=FALSE, echo=FALSE}
 par(mfrow=c(1,1))
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 getwd()
 ```
 
-
-
-# prepare data
+## Up date aims
 ***
 
-### Load library
-Load library for data frame organization, training linear model and plotting
+[^structure]: Objectives should be more specific actions that you expect to carry out (e.g. simulate, test, compare). At the end of the project it should be possible to assess which objectives have been met.
+
+#### Quantify the effect of cis-regulatory elements under different environmental stress by fitting linear models with group lasso
+
+To investigate and quantify how the cis-regulatory element affects the gene regulation, we built a series of linear models where each model takes the frequencies of cis-regulatory elements as input and predicts how the gene expression level under certain environmental stress. Their coefficient can be used to estimate the regulatory effect of both a single cis-regulatory element or all the cis-regulatory as a group. For example, if an element is given a relatively large coefficient in a model which predicts the change of expression level under certain environmental stress, we can say the element play a relatively important role in the regulation under that environmental stress. On the other hand, the bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and can be used to estimate the proportion of the efforts on regulation these cis-regulatory elements make. 
+
+At this stage, our aim is to apply group lasso as a multi-task learning method to training all the models together which allows the comparison across each model and ensures their generalization. The L2 penalty term can filter out most of the irrelevant factors by penalizing their coefficient close to zero. 
+
+The penalty on the coefficient vector for variable j is:
+$$
+(1-\alpha)/2||\beta_j||_2^2+\alpha||\beta_j||_2.
+$$
+
+
+## set up
+***
+
+#### Load library
 ```{r load library, results='hide', message=FALSE, echo=FALSE}
 library(data.table)
 library(tidyverse)
@@ -29,7 +42,7 @@ library(gridExtra)
 library(glmnet)
 ```
 
-### Load function
+#### Load function
 ```{r results='hide', message=FALSE, echo=FALSE}
 strReverse <- function(x)
         sapply(lapply(strsplit(x, NULL), rev), paste, collapse="")
@@ -75,10 +88,36 @@ mask_characters <- function(c1,c2){
 ```
 
 
-### Load Data
+## import data
+***
+
+#### Expression level change of 6152 distinct genes under 173 different environmental stresses from Gasch's study
+
+In this project, we apply the data describes gene expression level in various environment condition from Gasch's study `Genomic Expression Programs in the Response of Yeast Cells to Environmental Changes`. To figure out how the expression level change, DNA microarrays were used.
+
+
+
+#### 69 sequence motifs found on RNA untranslated region from 3 different studies
+
+The 69 sequence motifs we use in this project is from 3 different studies:
+
+53 of them come from the study of Shalgi et al (2005). The candidate motifs are derived by analyzing the exhaustively enumerating all k-mers(k = {8,9,10,11,12}) and looking for over-represented motifs with extreme half-life value. For the k-mers method, 515 significant k-mers are selected with ranksum test and clustered by ClustalW which resulted in 51 clusters of motifs. on the other hand, 2 more motifs are found by grouping genes with extreme half-life and ran Gibbs sampler.
+
+14 of them come from the study of Hogan et al. (2008). Two related computational methods are applied to identify candidates for the binding sites of 40 out of the more than 500 known and predicted RBPs in S. cerevisiae: (1)“finding informative regulatory elements” (FIRE) and (2)“relative filtering by nucleotide enrichment” (REFINE). The previous one searches for motifs with informative patterns of enrichment and the other one identifies all hexamers that are significantly enriched in untranslated regions, filters out regions of target sequences that are relatively devoid of such hexamers, and then applies the “multiple expectation maximization for motif elicitation” (MEME) motif-finding algorithm. As a result, 14 motifs that are likely to be the binding sites of 16 RBP are found.
+
+The rest 4 are from the study of Cheng (2017), four mRNA-stability related motifs in the 3′ UTR are found by De novo motif searching and their reliability and effect have been examined by linear mixed effect model, Fisher test P-value corrected with Benjamini–Hochberg, Wilcoxon rank-sum test and multivariate linear regression.
+
+
+#### UTR sequence of 4388 genes from Sun et al. (2013)
+
+UTR sequence of 4388 genes are obtained from Sun, M. et al. (2013) ‘Global analysis of Eukaryotic mRNA degradation reveals Xrn1-dependent buffering of transcript levels’. 
+
+
+
+## Load Data
+***
 Load 69 published motifs (from Abhi's report) and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
 
-**a problem with Gasch's data: there are three duplicated column called 'hs_00min_hs-2', need to check them in the article**
 ```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
 
 #ref datasets for UTRs 
@@ -102,7 +141,7 @@ for (i in names(expressionLevel_Gasch)[3:176]) {
 
 ```
 
-### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+#### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
 By converting all the motifs to regular expression, we are able to construct motifs frequency matrix which describes the frequency of 69 motifs among 4388 different genes.
 ```{r construct motif frequency, echo=FALSE}
 
@@ -123,13 +162,14 @@ for (i in 1:length(motifs)){
   ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
 }
 
-names_motifs_all <- names(ref_motifs)[2:length(ref_motifs)]
+names_motifs_all = names(ref_motifs)[2:length(ref_motifs)]
+names_environmental_stress = names(expressionLevel_Gasch)[4:length(expressionLevel_Gasch)]
 ```
 
 
 
 
-### Merge motif frequency matrix with Gasch's data
+#### Merge motif frequency matrix with Gasch's data
 Finally, we inner join the motif frequency matrix with Gasch's data and get the data frame we are going to explore. Each row represented data from one of the 4284 genes (since we have carried out inner join, only the genes shown in both tables are kept). There are 245 columns in total. 3 of them describe the basic information (short and formal name) of the gene represented by the row. 173 of them show how the gene expression level change under the certain environment condition and the other 69 of them respect the frequency of the 69 published motifs on the 3’UTR.
 ```{r merge motifs frequency with gasch data, echo=FALSE}
 
@@ -145,7 +185,7 @@ for(i in names_motifs_all){
 ```
 
 
-### Remove motifs with frequency 0
+#### Remove motifs with frequency 0
 ```{r echo=FALSE}
 motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
 remove_list = NULL
@@ -161,24 +201,76 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 
 
 
+## investigate the missing value
+***
 
-# multi-task learning
+#### 3% of the expression level data microarray are missing
+We noticed that, above all the expression level data, around 3% of them are missing value, Where most of the genes (94.8%) have a relatively complete expression levels' data (90%) while 41 genes (0.7%) have missing valves under more than quarter of environmental stresses.
+
+| number of genes | missing value (n) |
+| --------------- | ----------------- |
+| 755 (12.3%)     | 0                 |
+| 5073 (82.5%)    | 0 < n < 18        |
+| 283 (4.6%)      | 17 < n < 44       |
+| 41 (0.7%)       | 43 < n < 100      |
+
+
+```{r eval=FALSE, echo=FALSE}
+sum(is.na(expressionLevel_Gasch[4:176])) #number of missing values
+sum(is.na(expressionLevel_Gasch[4:176]))/(173*6152) #ratio of missing value
+
+na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
+
+length(na_count_sum[na_count_sum > 0 & na_count_sum < 18])
+length(na_count_sum[na_count_sum > 17 & na_count_sum < 44])
+length(na_count_sum[na_count_sum > 43 & na_count_sum < 100])
+```
+```{r echo=FALSE}
+na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
+hist(na_count_sum, breaks = c(0,1,2,5,10,20,30,50,70,100), main = 'histgram of percentage of missing value')
+```
+
+
+
+
+#### (1) replace missing value with 0
+As one of the easiest way to deal with the missing values, we could simply replace them by 0
+```{r}
+fullTable_Gasch_na2zero = fullTable_Gasch
+fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
+```
+
+
+#### (2) carry out inputation to replace missing data with substituted values
+Applying imputation to estimate the missing values should be a much better way rather than simply ignore the missing values or replacing them by mean or 0 since it reduce the bias. Olga Troyanskaya et al. suggest in their article `Missing value estimation methods for DNA microarrays` that weighted K-nearest neighbors (KNNimpute) could be another sensitive method to deal with the missing value
+
+> We show that KNNimpute appears to provide a more robust and sensitive method for missing value estimation than SVDimpute, and both SVDimpute and KNNimpute surpass the commonly used row average method (as well as filling missing values with zeros).
+
+According to Olga Troyanskaya et al., when we consider gene A that has one missing value under environmental stress X, we could look for how the expression level of gene A change in other environmental stress Y and looking for k other genes B that show similar behavior as gene A. Then we fill the missing value by the weighted average of genes B. The contribution of each gene is weighted by similarity of its expression to that of gene A. 
+
+```{r}
+# unimplemented
+```
+
+
+
+## glmnet group lasso notes
 ***
 
 
-### absic idea about glmnet group lasso
+#### basic idea about glmnet group lasso
 
 reference:
 
-- https://www.rdocumentation.org/packages/glmnet/versions/3.0-2/topics/glmnet
-- https://cran.r-project.org/web/packages/glmnet/glmnet.pdf
-- https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html
-- Jerome Friedman et al, A note on the group lasso and a sparse group lasso
-- https://en.wikipedia.org/wiki/Lasso_(statistics)#Group_lasso
-- https://www.zhihu.com/question/38121173
-- https://zhuanlan.zhihu.com/p/46999826
-- https://cosx.org/2016/10/data-mining-1-lasso/
-- How to interpret cv.glmnet() plot?: https://stats.stackexchange.com/questions/253963/how-to-interpret-cv-glmnet-plot
+[^rdocumentation]: https://www.rdocumentation.org/packages/glmnet/versions/3.0-2/topics/glmnet
+[^glmnet]: https://cran.r-project.org/web/packages/glmnet/glmnet.pdf
+[^alpha]: https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html
+[^A SPARSE-GROUP LASSO]: https://web.stanford.edu/~hastie/Papers/SGLpaper.pdf
+[^wiki]: https://en.wikipedia.org/wiki/Lasso_(statistics)#Group_lasso
+[^lasso and ridge]: https://www.zhihu.com/question/38121173
+[^lasso and ridge]: https://zhuanlan.zhihu.com/p/46999826
+[^code example]: https://cosx.org/2016/10/data-mining-1-lasso/
+[^ cv code example]: https://stats.stackexchange.com/questions/253963/how-to-interpret-cv-glmnet-plot
 
 
 defination of p-norm
@@ -187,14 +279,13 @@ $$
 $$
 
 
-> Glmnet is a package that fits a generalized linear model via penalized maximum likelihood. The regularization path is computed for the lasso or elasticnet penalty at a grid of values for the regularization parameter lambda.
+Glmnet is a package that fits a generalized linear model via penalized maximum likelihood. The regularization path is computed for the lasso or elasticnet penalty at a grid of values for the regularization parameter lambda.
 
 $$
 \min_{\beta_0,\beta} \frac{1}{N} \sum_{i=1}^{N} w_i l(y_i,\beta_0+\beta^T x_i) + \lambda\left[(1-\alpha)||\beta||_2^2/2 + \alpha ||\beta||_1\right],
 $$
-Where l(y,η) is the negative log-likelihood contribution for observation i.
 
-accroding to the introduction of glmnet, the penalty on the coefficient vector for variable j is
+Where l(y,η) is the negative log-likelihood contribution for observation i. Accroding to the introduction of glmnet, the penalty on the coefficient vector for variable j is
 $$
 (1-\alpha)/2||\beta_j||_2^2+\alpha||\beta_j||_1.
 $$
@@ -207,7 +298,7 @@ $$
 when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet. In group lasso, we summing all the penalty
 
 
-### compare L1 and L2
+#### compare L1 and L2
 
 - L1 could have more than one optimal solution while L2 only has one
 - L1 is more robust. no sensitive to extreme value
@@ -216,122 +307,7 @@ when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quad
 
 
 
-
-### test glmnet group lasso with a group of heat-shock conditions
-alpha = 1 for group lasso
-
-
-```{r}
-names_temperature_condition = vector(mode="character", length=5)
-names_temperature_condition[1] = "hs_05min_hs-1"
-names_temperature_condition[2] = "hs_10min_hs-1"
-names_temperature_condition[3] = "hs_15min_hs-1"
-names_temperature_condition[4] = "hs_30min_hs-1"
-names_temperature_condition[5] = "hs_40min_hs-1"
-names_temperature_condition[6] = "hs_60min_hs-1"
-names_temperature_condition[7] = "hs_80min_hs-1"
-
-x_hs = as.matrix(fullTable_Gasch_double[names_motifs_valid])
-y_hs = as.matrix(fullTable_Gasch_double[names_temperature_condition])
-
-```
-
-
-how to deal with the N/A number in independent variable(x) and dependent variable(y)?
-> it is easy to ignore N/A in x by setting them as 0. However, for dependent variable, we would prefer to ingore the loss cause by that data. Setting it as 0 won't have the same effect. Temporary, we set it as 0 and try to improve it latter.
-
-
-
-
-
-```{r}
-x_hs[is.na(x_hs)] = 0.0
-y_hs[is.na(y_hs)] = 0.0
-
-cv_models_hs = cv.glmnet(x_hs, y_hs, family = "mgaussian")
-```
-
-
-### pick lambda with 10-fold cross validation
-
-```{r echo=FALSE}
-plot(cv_models_hs)
-```
-
-there are two different lambdas `lambda.min` and `lambda.1se`, which one to used?
-`lambda.min` is the value of lambda that gives minimum cvm.
-`lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum.
-
-meaning of the error bar?
-> Confidence intervals represent error estimates for the loss metric (red dots). They're computed using CV. The vertical lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates.
-
-
-how the mse is calculated?
-> The error is accumulated, and the average error and standard deviation over the folds is computed
-
-
-why alpha = 1?
-> When alpha=1 this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet.
-
-
-
-### training models with the lambda value that gives minimum loss
-```{r}
-models_hs = glmnet(x_hs, y_hs, family = "mgaussian", lambda = cv_models_hs$lambda.min)
-```
-
-
-### compare their coefficient
-```{r echo=FALSE, fig.height=12, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(models_hs$beta))
-  plot_points(models_hs$beta$`hs_05min_hs-1`,'black')
-  plot_points(models_hs$beta$`hs_10min_hs-1`,'gray15')
-  plot_points(models_hs$beta$`hs_15min_hs-1`,'gray30')
-  plot_points(models_hs$beta$`hs_30min_hs-1`,'gray45')
-  plot_points(models_hs$beta$`hs_40min_hs-1`,'gray60')
-  plot_points(models_hs$beta$`hs_60min_hs-1`,'gray75')
-  plot_points(models_hs$beta$`hs_80min_hs-1`,'gray90')
-  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
-}
-
-{
-  plot_labels(names_motifs_valid, range_coe(models_hs$beta))
-  plot_line(models_hs$beta$`hs_05min_hs-1`,'black')
-  plot_line(models_hs$beta$`hs_10min_hs-1`,'gray15')
-  plot_line(models_hs$beta$`hs_15min_hs-1`,'gray30')
-  plot_line(models_hs$beta$`hs_30min_hs-1`,'gray45')
-  plot_line(models_hs$beta$`hs_40min_hs-1`,'gray60')
-  plot_line(models_hs$beta$`hs_60min_hs-1`,'gray75')
-  plot_line(models_hs$beta$`hs_80min_hs-1`,'gray90')
-  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
-}
-
-```
-
-### compare the coefficients with the linear model without group lasso
-```{r}
-x_hs = as.matrix(fullTable_Gasch_double[names_motifs_valid])
-y_hs = as.matrix(fullTable_Gasch_double$`hs_15min_hs-1`)
-x_hs[is.na(x_hs)]<-0.0
-y_hs[is.na(y_hs)]<-0.0
-
-model_hs = glmnet(x_hs, y_hs, family = "gaussian", lambda = 0)
-```
-
-```{r echo=FALSE, fig.height=12, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(list(models_hs$beta[[1]], model_hs$beta)))
-  plot_line(model_hs$beta@x,'blue')
-  plot_line(models_hs$beta$`hs_15min_hs-1`,'red')
-  legend('bottomleft', legend=c('with lasso', 'without lasso'), col=c('red','blue'), lty = 1)
-}
-
-
-```
-
-
-# multi-task learning on all 173 environmental stress
+## multi-task learning on all 173 environmental stress
 ***
 
 ```{r}
@@ -347,76 +323,98 @@ cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 ```
 
 
-### pick lambda with 10-fold cross validation
+#### pick lambda with 10-fold cross validation
+`lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
+
 ```{r}
 plot(cv_models_all)
 ```
 
-### training models with the lambda value that gives minimum loss
-```{r}
+#### training models with the lambda value that gives minimum loss. a majority of coefficients are very close to 0, the effect of penalty is significant.
+Here we let alpha=1 as default to achieve a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet.
+```{r echo=FALSE}
 models_all = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
 ```
 
-### compare with the base line
+
 ```{r}
-fullTable_Gasch_na_to_zero = fullTable_Gasch
-fullTable_Gasch_na_to_zero[is.na(fullTable_Gasch_na_to_zero)] <- 0
-sum(sapply(fullTable_Gasch_na_to_zero[4:176], var))
-```
-
-
-### compare their coefficient
-```{r echo=FALSE, fig.height=12, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_points(models_all$beta$`hs_05min_hs-1`,'black')
-  plot_points(models_all$beta$`hs_10min_hs-1`,'gray15')
-  plot_points(models_all$beta$`hs_15min_hs-1`,'gray30')
-  plot_points(models_all$beta$`hs_30min_hs-1`,'gray45')
-  plot_points(models_all$beta$`hs_40min_hs-1`,'gray60')
-  plot_points(models_all$beta$`hs_60min_hs-1`,'gray75')
-  plot_points(models_all$beta$`hs_80min_hs-1`,'gray90')
-  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+coefficients = NULL
+for (condition in names_condition) {
+  coefficients = c(coefficients,models_all$beta[[condition]]@x)
 }
 
-{
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_line(models_all$beta$`hs_05min_hs-1`,'black')
-  plot_line(models_all$beta$`hs_10min_hs-1`,'gray15')
-  plot_line(models_all$beta$`hs_15min_hs-1`,'gray30')
-  plot_line(models_all$beta$`hs_30min_hs-1`,'gray45')
-  plot_line(models_all$beta$`hs_40min_hs-1`,'gray60')
-  plot_line(models_all$beta$`hs_60min_hs-1`,'gray75')
-  plot_line(models_all$beta$`hs_80min_hs-1`,'gray90')
-  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
-}
+hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1,0,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient')
 
 ```
 
-### key coefficient
-recall that the four motifs we found with high correlation coefficient are `UGUAHMNUA`, `ATATTC`, `TGTATAWT`, and `TGTAAATA`. Only two of them are here.
-```{r echo=FALSE, fig.height=12, fig.width=14}
-names_motifs_key = c("UGUAHMNUA", "UKWCGRGGN", "CGGGTAAG","TGTATAWT","TTTTCTAGGDD","WAAAGGTAGTAAGT","TGAGGGCTA")
-position_motifs_key = mask_characters(names_motifs_valid, names_motifs_key)
+#### 28% of the coefficient are penalized to zero
 
+```{r }
+count_nonzero_coefficient = 0
 
-{
-  plot_labels(names_motifs_key, range_coe(models_all$beta))
-  plot_points(models_all$beta$`hs_05min_hs-1`[position_motifs_key],'black')
-  plot_points(models_all$beta$`hs_10min_hs-1`[position_motifs_key],'gray15')
-  plot_points(models_all$beta$`hs_15min_hs-1`[position_motifs_key],'gray30')
-  plot_points(models_all$beta$`hs_30min_hs-1`[position_motifs_key],'gray45')
-  plot_points(models_all$beta$`hs_40min_hs-1`[position_motifs_key],'gray60')
-  plot_points(models_all$beta$`hs_60min_hs-1`[position_motifs_key],'gray75')
-  plot_points(models_all$beta$`hs_80min_hs-1`[position_motifs_key],'gray90')
-  legend('bottomleft', legend=c('5min','10min','15min', '30min','40min','60min','80min'), col=c('black', 'gray15', 'gray30', 'gray45', 'gray60','gray75','gray90'), lty = 1)
+for (condition in names_environmental_stress) {
+  count_nonzero_coefficient = count_nonzero_coefficient + models_all$beta[[condition]]@p[2]
 }
+
+count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
+
+1 - (count_nonzero_coefficient/count_all_coefficient)
 
 ```
 
 
+#### coefficient shift to zero as the time after environmental stress increasing
 
-### Analysis the Bias
+```{r include=FALSE}
+{
+  names_temperature_condition = vector(mode="character", length=5)
+  names_temperature_condition[1] = "hs_05min_hs-1"
+  names_temperature_condition[2] = "hs_10min_hs-1"
+  names_temperature_condition[3] = "hs_15min_hs-1"
+  names_temperature_condition[4] = "hs_30min_hs-1"
+  names_temperature_condition[5] = "hs_40min_hs-1"
+  names_temperature_condition[6] = "hs_60min_hs-1"
+  names_temperature_condition[7] = "hs_80min_hs-1"
+}
+
+{
+  coefficients = NULL
+  
+  for (condition in names_temperature_condition) {
+    column = numeric(models_all$beta[[condition]]@Dim[1])
+    column[models_all$beta[[condition]]@i+1] = models_all$beta[[condition]]@x
+    coefficients = cbind(coefficients,column)
+  }
+  coefficients = as.data.frame(coefficients)
+  names(coefficients) = names_temperature_condition
+  row.names(coefficients) = names_motifs_valid
+  melt(setDT(coefficients, keep.rownames = TRUE), "rn")
+}
+```
+
+```{r echo=FALSE, fig.height=10, fig.width=12}
+
+
+ggplot(data = melt(setDT(coefficients[1:10], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn))
+
+ggplot(data = melt(setDT(coefficients[11:20], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn))
+
+ggplot(data = melt(setDT(coefficients[21:30], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn))
+
+ggplot(data = melt(setDT(coefficients[31:40], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn))
+
+ggplot(data = melt(setDT(coefficients[41:50], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+  geom_line(aes(colour=rn))
+
+
+```
+
+
+#### Analysis the Bias
 The bias of each model shows the change of expression level that cannot be explained by these motifs
 here we calculate the percentage of it against the mean of change in expression level to estimate how much of the regulation effect cannot be expalined by the model. The estimation is base on many assumptions and could be very ambiguous. 
 
@@ -430,8 +428,8 @@ models_all$a0/colMeans(fullTable_Gasch_double[names_condition], na.rm = TRUE)
 ```
 
 
-### compare coefficient under different type of environmental stress
-```{r echo=FALSE, fig.height=12, fig.width=12}
+#### compare coefficient under oopposite environmental stress
+```{r echo=FALSE, fig.height=10, fig.width=12}
 {
   plot_labels(names_motifs_valid, range_coe(models_all$beta))
   plot_points(models_all$beta$`hs_15min_hs-1`,'red')
@@ -450,16 +448,9 @@ models_all$a0/colMeans(fullTable_Gasch_double[names_condition], na.rm = TRUE)
 
 
 
-### compare coefficient of heat shock with and without sorbital - 5min
-check how the `additional effect` mension by Gasch shown in the model
-```{r echo=FALSE, fig.height=12, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_points(models_all$beta$`hs_29to33_05min`,'red')
-  plot_points(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_05min`,'blue')
-  plot_points(models_all$beta$`1M_sorbitol_05min`,'forestgreen')
-  legend('bottomleft', legend=c('hs with sorbitol','hs without sorbitol','sorbitol without hs'), col=c('red','blue','forestgreen'), lty = 1)
-}
+#### compare coefficient of heat shock with and without sorbital - 5min
+check if the `additional effect` mension by Gasch is shown in the models. The effect is obvious at first and decrease in 30 mins
+```{r echo=FALSE, fig.height=10, fig.width=12}
 
 {
   plot_labels(names_motifs_valid, range_coe(models_all$beta))
@@ -473,16 +464,8 @@ check how the `additional effect` mension by Gasch shown in the model
 
 
 
-### compare coefficient of heat shock with and without sorbital - 15min
-```{r echo=FALSE, fig.height=12, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_points(models_all$beta$`hs_29to33_15min`,'red')
-  plot_points(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`,'blue')
-  plot_points(models_all$beta$`1M_sorbitol_15min`,'forestgreen')
-  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
-}
-
+#### compare coefficient of heat shock with and without sorbital - 15min
+```{r echo=FALSE, fig.height=10, fig.width=12}
 
 {
   plot_labels(names_motifs_valid, range_coe(models_all$beta))
@@ -497,16 +480,8 @@ check how the `additional effect` mension by Gasch shown in the model
 
 
 
-### compare coefficient of heat shock with and without sorbital - 30min
-```{r echo=FALSE, fig.height=12, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_points(models_all$beta$`hs_29to33_30min`,'red')
-  plot_points(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_30min`,'blue')
-  plot_points(models_all$beta$`1M_sorbitol_30min`,'forestgreen')
-  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
-}
-
+#### compare coefficient of heat shock with and without sorbital - 30min
+```{r echo=FALSE, fig.height=10, fig.width=12}
 
 {
   plot_labels(names_motifs_valid, range_coe(models_all$beta))
@@ -522,14 +497,17 @@ check how the `additional effect` mension by Gasch shown in the model
 
 ### how to improve model?
 
-- We should solve the problem we have in y's N/A value. There could be two way to deal with it. First, we fill up the N/A value by referencing other value. Second, we adjust the glmnet to ignore data with N/A y value.
-- We may need to consider the relatively position of motifs
+- We should solve the problem we have in y's N/A value. We may fill up the N/A value by comparing other value or adjust the glmnet to ignore data with N/A y value.
+- We may need to consider information about position of motifs on RNA
 - We may need to consider the coperation between two RNA binding proteins or between RNA binding proteins and secondary structure
 - May run cv.glmnet many times to reduce randomness
-- adjust dependended value?
-- more data?
+- more data? (maybe UTR'5)
 - should we reflect the motifs and match the sequence?
-- compare similar model to make the conclusion more reliable
+
+### how to analyse these models?
+
+- Gasch suggests links between specific **sets of genes** and **specific features** of the experimental conditions. We may check the relationship between them
+- compare similar model to make the conclusion more reliable (e.g. heat shock after different time)
 
 
 ### time table
