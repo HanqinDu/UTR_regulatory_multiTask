@@ -73,7 +73,7 @@ expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt
                        locale = locale(decimal = ","))
 
 # convert all the expression data to number
-for (i in names(expressionLevel_Gasch)[3:175]) {
+for (i in names(expressionLevel_Gasch)[3:176]) {
   expressionLevel_Gasch[[i]] <- as.numeric(as.character(expressionLevel_Gasch[[i]]))
 }
 
@@ -130,7 +130,6 @@ summary(motifs_count_sum)
 
 # plot histgram
 hist(motifs_count_sum, xlim = c(0,20), breaks = c(0,1,2,3,5,10,20,30,8000), main = 'histogram of motifs frequency sum')
-
 
 ```
 
@@ -215,7 +214,6 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_con
 ### Plot the four motifs with significant magnitude of correlation coefficient
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
 ## plot motifs with high correlation coefficient
-test= as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition])
 ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.25,0.1) + 
@@ -503,13 +501,16 @@ grid.arrange(
 ### Picking a group of heat-shock related environment condition 
 
 ```{r}
+motif_temperature_sensitive = c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA')
+```
+
+```{r}
 names_temperature_condition = vector(mode="character", length=5)
 names_temperature_condition[1] = "hs_15min_hs-1"
 names_temperature_condition[2] = "hs_30min_hs-1"
 names_temperature_condition[3] = "hs_40min_hs-1"
 names_temperature_condition[4] = "hs_60min_hs-1"
 names_temperature_condition[5] = "hs_80min_hs-1"
-
 ```
 
 ```{r fig.width=15}
@@ -550,7 +551,7 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_con
 ### Plot the four motifs with significant magnitude of correlation coefficient
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
 ## plot motifs with high correlation coefficient
-ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
+ggplot(data = melt(setDT(as.data.frame(motif_overview[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn)) + 
   ylim(-0.3,0.1) + 
@@ -567,21 +568,6 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','
 # Explore the correlation under combination stresses
 ***
 ### Calculate correlation coefficient and plot them
-
-```{r echo=FALSE}
-
-# consider only motif with frequency larger than 0
-remove_list = NULL
-
-for (i in names(motifs_count_sum)){
-  if (motifs_count_sum[[i]] == 0){
-    remove_list <- c(remove_list,i)
-  }
-}
-
-names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
-
-```
 
 ```{r}
 # pick a group of temperature condition
@@ -608,9 +594,7 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[1:50,na
 ```
 
 ### correlation coefficient of the 4 strong linear-related motifs
-```{r echo=FALSE, fig.width=15, fig.height=12}
-motif_temperature_sensitive = c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA')
-
+```{r echo=FALSE, fig.width=10, fig.height=7}
 ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.25,0.1) + 
   labs(x = "after heat shock with sorbitol", y = "correlation coefficient")+
@@ -652,7 +636,6 @@ names_temperature_condition[2] = "hs_37to25_30min"
 names_temperature_condition[3] = "hs_37to25_45min"
 names_temperature_condition[4] = "hs_37to25_60min"
 names_temperature_condition[5] = "hs_37to25_90min"
-
 ```
 
 
@@ -682,7 +665,7 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[1:50,names_temperature_con
 ### Plot the four motifs with significant magnitude of correlation coefficient
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
 ## plot motifs with high correlation coefficient
-ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"),
+ggplot(data = melt(setDT(as.data.frame(motif_overview[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn)) + ylim(-0.1,0.2) + 
   labs(x = "after cooling from 37C to 25C", y = "correlation coefficient")+
   scale_x_discrete(labels=c("hs_37to25_15min" = "15min", "hs_37to25_30min" = "30min","hs_37to25_45min" = "45min","hs_37to25_60min" = "60min","hs_37to25_90min" = "90min")) + 
@@ -691,9 +674,6 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','
 
 ```
 
-
-
-
 # Summary
 ***
 we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment conditions provided by Gasch's data and 50 motifs from 69 published motifs (65 experimented motifs and 4 Cheng's motifs). More than half of the motifs has a relatively low frequency. By investigating the corresponding correlation coefficient and carrying out linear regression, we found 4 strong linear-related motifs and 5 weak linear-related motifs. Thus, Only a small fraction of motifs responds to heat-shock related environment stress. 
@@ -701,6 +681,7 @@ we have analyzed 4284 / 6152 of genes, 5/173 of heat-shock-relevant environment 
 By comparing the correlation coefficient between motifs frequency and expression level change under heat shock, heat shock with sorbitol and hypothermia, we have investigated an opposite relation between the PPC of motifs and expression level change under heat shock and hypothermia and a similar relation between the PPC of motifs and expression level change under heat shock with sorbitol and regular heat shock.
 
 Therefore, we believe it is reasonable to carry out group lasso on this dataset.
+
 
 
 

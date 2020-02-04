@@ -306,18 +306,14 @@ when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quad
 - L2 is easier to calculate
 
 
-
 ## multi-task learning on all 173 environmental stress
 ***
 
 ```{r}
 names_condition = colnames(expressionLevel_Gasch, do.NULL = TRUE, prefix = "col")[4:176]
 
-x = as.matrix(fullTable_Gasch_double[names_motifs_valid])
-y = as.matrix(fullTable_Gasch_double[names_condition])
-
-x[is.na(x)]<-0.0
-y[is.na(y)]<-0.0
+x = as.matrix(fullTable_Gasch_na2zero[names_motifs_valid])
+y = as.matrix(fullTable_Gasch_na2zero[names_condition])
 
 cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 ```
