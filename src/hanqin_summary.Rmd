@@ -18,7 +18,7 @@ In this project, we are interested in using these cis-regulatory features to pre
 
 
 # Part 1: Assess the rationality of group lasso
-This is the first part of this project. Before multi-task learning, we would like to investigate the data and assess if it is reasonable to apply group lasso on them.
+This is the first part of this project. Before applying multi-task learning, we would like to investigate the data and assess if it is reasonable to apply group lasso on them.
 
 
 ### Load library and function
@@ -48,6 +48,57 @@ plot_mean_deviation <- function(dataset,label,mean,deviation){
   axis(side=1,at=1:dim(dataset)[1],labels=dataset[[label]])
 }
 
+# extract coefficients from selected models
+extract_coefficient <- function(models, conditions) {
+  coefficients = NULL
+  
+  for (condition in conditions) {
+    column = numeric(models$beta[[condition]]@Dim[1])
+    column[models$beta[[condition]]@i+1] = models$beta[[condition]]@x
+    coefficients = cbind(coefficients,column)
+  }
+  coefficients = as.data.frame(coefficients)
+  names(coefficients) = conditions
+  row.names(coefficients) = names_motifs_valid
+  return(melt(setDT(coefficients, keep.rownames = TRUE), "rn"))
+}
+
+# plot selected models coefficient with line graph
+plot_models_line <- function(models, conditions, lineNumber) {
+  coefficients = NULL
+  
+  for (condition in conditions) {
+    column = numeric(models$beta[[condition]]@Dim[1])
+    column[models$beta[[condition]]@i+1] = models$beta[[condition]]@x
+    coefficients = cbind(coefficients,column)
+  }
+  coefficients = as.data.frame(coefficients)
+  names(coefficients) = conditions
+  row.names(coefficients) = names_motifs_valid
+  melt(setDT(coefficients, keep.rownames = TRUE), "rn")
+  
+  i = 1
+  while (i <= dim(coefficients)[1]) {
+    if((i+lineNumber)<= dim(coefficients)[1]){
+      print(
+      ggplot(data = melt(setDT(coefficients[i:(i+lineNumber-1)], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+        geom_line(aes(colour=rn))+
+        labs(x = "model", y = "regression coefficient")
+      )
+    }else{
+      print(
+      ggplot(data = melt(setDT(coefficients[i:dim(coefficients)[1]], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+        geom_line(aes(colour=rn))+
+        labs(x = "model", y = "regression coefficient")
+      )
+    }
+    
+    i = i + lineNumber
+  }
+  
+}
+
+
 ```
 
 
@@ -56,12 +107,13 @@ plot_mean_deviation <- function(dataset,label,mean,deviation){
 ##### Expression level change of 6152 distinct genes under 173 different environmental stresses from Gasch's study
 In this project, we apply the data describes gene expression level in various environment condition from Gasch's study `Genomic Expression Programs in the Response of Yeast Cells to Environmental Changes`. To figure out how the expression level change, DNA microarrays were used to measure the relatively abundance of mRNA before and after a series of environmental stresses.
 
+
 ##### The 69 candidate sequence motifs we use in this project is from 3 different studies:
 
 (1) 53 of them come from the study of Shalgi et al (2005). The candidate motifs are derived by analyzing the exhaustively enumerating all k-mers(k = {8,9,10,11,12}) and looking for over-represented motifs with extreme half-life value. For the k-mers method, 515 significant k-mers are selected with ranksum test and clustered by ClustalW which resulted in 51 clusters of motifs. on the other hand, 2 more motifs are found by grouping genes with extreme half-life and ran Gibbs sampler.
 
-(2) 14 of them come from the study of Hogan et al. (2008). Two related computational methods are applied to identify candidates for the binding sites of 40 out of the more than 500 known and predicted RBPs in S. cerevisiae: (1)“finding informative regulatory elements” (FIRE) and (2)“relative filtering by nucleotide enrichment” (REFINE). The previous one searches for motifs with informative patterns of enrichment and the other one identifies all hexamers that are significantly enriched in untranslated regions, filters out regions of target sequences that are relatively devoid of such hexamers, and then applies the “multiple expectation maximization for motif elicitation” (MEME) motif-finding algorithm. As a result, 14 motifs that are likely to be the binding sites of 16 RBP are found.
-
+(2) 14 of them come from the study of Hogan et al. (2008) who have applied two related computational methods to identify candidates for the binding sites of 40 out of the more than 500 known and predicted RBPs in S. cerevisiae: (1)“finding informative regulatory elements” (FIRE) and (2)“relative filtering by nucleotide enrichment” (REFINE). The previous one searches for motifs with informative patterns of enrichment and the other one identifies all hexamers that are significantly enriched in untranslated regions, filters out regions of target sequences that are relatively devoid of such hexamers, and then applies the “multiple expectation maximization for motif elicitation” (MEME) motif-finding algorithm. As a result, 14 motifs that are likely to be the binding sites of 16 RBP are found.
+  
 (3) The rest 4 are from the study of Cheng (2017), four mRNA-stability related motifs in the 3′ UTR are found by De novo motif searching and their reliability and effect have been examined by linear mixed effect model, Fisher test P-value corrected with Benjamini–Hochberg, Wilcoxon rank-sum test and multivariate linear regression.
 
 ##### UTR sequence of 4388 genes from Sun et al. (2013)
@@ -357,11 +409,11 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[motif_temperature_sensitiv
 
 To investigate and quantify how the cis-regulatory element affects the gene regulation, we built a series of linear models where each model takes the frequencies of cis-regulatory elements as input and predicts how the gene expression level under certain environmental stress. Their coefficient can be used to estimate the regulatory effect of both a single cis-regulatory element or all the cis-regulatory as a group. For example, if an element is given a relatively large coefficient in a model which predicts the change of expression level under certain environmental stress, we can say the element play a relatively important role in the regulation under that environmental stress. On the other hand, the bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and can be used to estimate the proportion of the efforts on regulation these cis-regulatory elements make. 
 
-At this stage, our aim is to apply group lasso as a multi-task learning method to training all the models together which allows the comparison across each model and ensures their generalization. The L2 penalty term can filter out most of the irrelevant factors by penalizing their coefficient close to zero. 
+At this stage, our aim is to apply group lasso as a multi-task learning method to training all the models together which allows the comparison across each model and ensures their generalization. The L2 penalty term can filter out most of the irrelevant factors by penalizing their coefficient towards zero. 
 
 The penalty on the coefficient vector for variable j is:
 $$
-(1-\alpha)/2||\beta_j||_2^2+\alpha||\beta_j||_2.
+(1-\alpha)/2||\beta_j||_2^2+\lambda||\beta_j||_2.
 $$
 
 
@@ -394,7 +446,7 @@ hist(na_count_sum, breaks = c(0,1,2,5,10,20,30,50,70,100), main = 'histgram of p
 
 Applying imputation to estimate the missing values should be a much better way rather than simply ignore the missing values or replacing them by mean or 0 since it reduces the bias. Olga Troyanskaya et al. suggest in their article `Missing value estimation methods for DNA microarrays` that weighted K-nearest neighbors (KNNimpute) could be another sensitive method to deal with the missing value. However, our temporary solution is replacing them with 0.
 
-```{r echo=FALSE}
+```{r}
 fullTable_Gasch_na2zero = fullTable_Gasch
 fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
 ```
@@ -402,7 +454,7 @@ fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
 
 ### consider motifs with non-zero frequency
 
-```{r echo=FALSE}
+```{r}
 motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
 remove_list = NULL
 
@@ -416,7 +468,7 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 ```
 
 ### choose lambda from 10-fold cross validation
-
+We need to set the hyperparameter lambda to control the effect of penalization. A common approch to this is by cross validation.
 ```{r echo=FALSE}
 names_condition = colnames(expressionLevel_Gasch, do.NULL = TRUE, prefix = "col")[4:176]
 
@@ -429,17 +481,31 @@ cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 ```{r}
 plot(cv_models_all)
 ```
-
+`lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical dashed lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
 
 ### training model with selected lambda
+training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
 ```{r}
 models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
 models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
+
+paste("lambda.min =",cv_models_all$lambda.min)
+paste("lambda.1se =",cv_models_all$lambda.1se)
 ```
 
 
-### 46% of the coefficient are penalized to zero
-```{r}
+### the penalize effect with λ = lambda.1se is much stronger than that with λ = lambda.min
+We summary coefficients from all the models together to compare the penalized effect of models with different λ values. The model with λ = lambda.1se penalizes more than 90% of coefficients to 0 while the model with λ = lambda.min keep more than half of its coefficients non-zero.
+```{r echo=FALSE}
+coefficients = NULL
+for (condition in names_condition) {
+  coefficients = c(coefficients,models_all_minLambda$beta[[condition]]@x)
+}
+
+hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.min')
+```
+
+```{r echo=FALSE}
 count_nonzero_coefficient = 0
 
 for (condition in names_environmental_stress) {
@@ -448,15 +514,39 @@ for (condition in names_environmental_stress) {
 
 count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
 
-1 - (count_nonzero_coefficient/count_all_coefficient)
+paste("percentage of non-zero coefficient =", count_nonzero_coefficient/count_all_coefficient)
 ```
 
 
-### coefficient shift to zero as the time after environmental stress increasing
-Here we plot a graph to show how the coefficient given to each motif change across the timeline after heat shock. For most of the motifs, their coefficients increase with shortly delay and reach their peak at 15mins. Than they gradually drop to 0 as time past.
+```{r echo=FALSE}
+coefficients = NULL
+for (condition in names_condition) {
+  coefficients = c(coefficients,models_all_1seLambda$beta[[condition]]@x)
+}
+
+hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.1se')
+
+```
+
+
+```{r echo=FALSE}
+count_nonzero_coefficient = 0
+
+for (condition in names_environmental_stress) {
+  count_nonzero_coefficient = count_nonzero_coefficient + models_all_1seLambda$beta[[condition]]@p[2]
+}
+
+count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
+
+paste("percentage of non-zero coefficient =", count_nonzero_coefficient/count_all_coefficient)
+```
+
+
+### regulatory effect of motifs decrease as time pass in heat shock
+Here we plot a graph to show how the coefficient given to each motif change across the timeline after heat shock. For most of the motifs, their coefficients increase with shortly delay and reach their peak at 15mins. Than they gradually shift to 0 as time past. An explanation of the 15mins delay is that the cis-regulatory elements could regulate the expression level by adjusting the stability of mRNA which may need some time to decay.
 ```{r include=FALSE}
 {
-  names_temperature_condition = vector(mode="character", length=5)
+  names_temperature_condition = vector(mode="character", length=7)
   names_temperature_condition[1] = "hs_05min_hs-1"
   names_temperature_condition[2] = "hs_10min_hs-1"
   names_temperature_condition[3] = "hs_15min_hs-1"
@@ -466,41 +556,83 @@ Here we plot a graph to show how the coefficient given to each motif change acro
   names_temperature_condition[7] = "hs_80min_hs-1"
 }
 
+```
+
+```{r fig.height=10, fig.width=12}
+plot_models_line(models_all_minLambda, names_temperature_condition, 10)
+```
+
+### compare coefficients under heat shock and heat shock with sorbital (uncompleted)
+Since we are interesting in investigating how motifs's regulatory effect change under different condition, we compare the regression coefficient between two models: heat shock with sorbitol and heat shock without sorbitol.
+
+```{r}
 {
-  coefficients = NULL
-  
-  for (condition in names_temperature_condition) {
-    column = numeric(models_all_minLambda$beta[[condition]]@Dim[1])
-    column[models_all_minLambda$beta[[condition]]@i+1] = models_all_minLambda$beta[[condition]]@x
-    coefficients = cbind(coefficients,column)
-  }
-  coefficients = as.data.frame(coefficients)
-  names(coefficients) = names_temperature_condition
-  row.names(coefficients) = names_motifs_valid
-  melt(setDT(coefficients, keep.rownames = TRUE), "rn")
+  names_sorbitol_condition = vector(mode="character", length=3)
+  names_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
 }
+
+{
+  names_nosorbitol_condition = vector(mode="character", length=3)
+  names_nosorbitol_condition[1] = "hs_29to33_05min"
+  names_nosorbitol_condition[2] = "hs_29to33_15min"
+  names_nosorbitol_condition[3] = "hs_29to33_30min"
+}
+
+coefficients = extract_coefficient(models_all_minLambda,c(names_sorbitol_condition,names_nosorbitol_condition))
 ```
 
-```{r echo=FALSE, fig.height=10, fig.width=12}
+```{r fig.height=10, fig.width=12}
+plot_models_line(models_all_minLambda, names_nosorbitol_condition, 10)
+```
 
-
-ggplot(data = melt(setDT(coefficients[1:10], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[11:20], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[21:30], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[31:40], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[41:50], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-
+```{r fig.height=10, fig.width=12}
+plot_models_line(models_all_minLambda, names_sorbitol_condition, 10)
 ```
 
 
+```{r echo=FALSE}
+coefficients_TGAGGGCTA = coefficients[coefficients$rn == "TGAGGGCTA",]
+coefficients_TGAGGGCTA$time_min = c(5,15,30,5,15,30)
+coefficients_TGAGGGCTA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of TGAGGGCTA")
+  
+```
+
+```{r echo=FALSE}
+coefficients_UGUAHMNUA = coefficients[coefficients$rn == "UGUAHMNUA",]
+coefficients_UGUAHMNUA$time_min = c(5,15,30,5,15,30)
+coefficients_UGUAHMNUA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_UGUAHMNUA, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of UGUAHMNUA")
+```
+
+```{r echo=FALSE}
+coefficients_TGAGGGCTA = coefficients[coefficients$rn == "TGAGGGCTA",]
+coefficients_TGAGGGCTA$time_min = c(5,15,30,5,15,30)
+coefficients_TGAGGGCTA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of TGAGGGCTA")
+```
+
+
+
+
+```{r}
+coefficients_UKWCGRGGN = coefficients[coefficients$rn == "UKWCGRGGN",]
+coefficients_UKWCGRGGN$time_min = c(5,15,30,5,15,30)
+coefficients_UKWCGRGGN$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_UKWCGRGGN, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of UKWCGRGGN")
+```
 

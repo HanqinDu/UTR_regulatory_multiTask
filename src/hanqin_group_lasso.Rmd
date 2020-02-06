@@ -25,7 +25,7 @@ At this stage, our aim is to apply group lasso as a multi-task learning method t
 
 The penalty on the coefficient vector for variable j is:
 $$
-(1-\alpha)/2||\beta_j||_2^2+\alpha||\beta_j||_2.
+(1-\alpha)/2||\beta_j||_2^2+\lambda||\beta_j||_2.
 $$
 
 
@@ -320,7 +320,7 @@ cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 
 
 #### pick lambda with 10-fold cross validation
-`lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
+`lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical dashed lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
 
 ```{r}
 plot(cv_models_all)
@@ -459,7 +459,6 @@ check if the `additional effect` mension by Gasch is shown in the models. The ef
 
 
 
-
 #### compare coefficient of heat shock with and without sorbital - 15min
 ```{r echo=FALSE, fig.height=10, fig.width=12}
 
@@ -471,9 +470,6 @@ check if the `additional effect` mension by Gasch is shown in the models. The ef
   legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
 }
 ```
-
-
-
 
 
 #### compare coefficient of heat shock with and without sorbital - 30min
@@ -488,32 +484,6 @@ check if the `additional effect` mension by Gasch is shown in the models. The ef
 }
 ```
 
-
-
-
-### how to improve model?
-
-- We should solve the problem we have in y's N/A value. We may fill up the N/A value by comparing other value or adjust the glmnet to ignore data with N/A y value.
-- We may need to consider information about position of motifs on RNA
-- We may need to consider the coperation between two RNA binding proteins or between RNA binding proteins and secondary structure
-- May run cv.glmnet many times to reduce randomness
-- more data? (maybe UTR'5)
-- should we reflect the motifs and match the sequence?
-
-### how to analyse these models?
-
-- Gasch suggests links between specific **sets of genes** and **specific features** of the experimental conditions. We may check the relationship between them
-- compare similar model to make the conclusion more reliable (e.g. heat shock after different time)
-
-
-### time table
-
-- week 3: Apply basis function to explore if the effect of motifs combination. Analyse the models to quantify how the motifs affect regulation
-- week 4: Expand the dataset.
-- week 5: prepare for group meeting
-- week 6-9: more attempt and improvement
-- week 10-11: final report
-- week 12-14: final presentations 
 
 
 
