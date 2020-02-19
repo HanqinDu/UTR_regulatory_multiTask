@@ -12,12 +12,12 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 getwd()
 ```
 
-## Up date aims
+# Up date aims
 ***
 
 [^structure]: Objectives should be more specific actions that you expect to carry out (e.g. simulate, test, compare). At the end of the project it should be possible to assess which objectives have been met.
 
-#### Quantify the effect of cis-regulatory elements under different environmental stress by fitting linear models with group lasso
+### Quantify the effect of cis-regulatory elements under different environmental stress by fitting linear models with group lasso
 
 To investigate and quantify how the cis-regulatory element affects the gene regulation, we built a series of linear models where each model takes the frequencies of cis-regulatory elements as input and predicts how the gene expression level under certain environmental stress. Their coefficient can be used to estimate the regulatory effect of both a single cis-regulatory element or all the cis-regulatory as a group. For example, if an element is given a relatively large coefficient in a model which predicts the change of expression level under certain environmental stress, we can say the element play a relatively important role in the regulation under that environmental stress. On the other hand, the bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and can be used to estimate the proportion of the efforts on regulation these cis-regulatory elements make. 
 
@@ -29,10 +29,10 @@ $$
 $$
 
 
-## set up
+# set up
 ***
 
-#### Load library
+### Load library
 ```{r load library, results='hide', message=FALSE, echo=FALSE}
 library(data.table)
 library(tidyverse)
@@ -40,13 +40,12 @@ library(lmodel2)
 library(splitstackshape)
 library(gridExtra)
 library(glmnet)
+library(impute)
 ```
 
-#### Load function
+### Load function
 ```{r results='hide', message=FALSE, echo=FALSE}
-strReverse <- function(x)
-        sapply(lapply(strsplit(x, NULL), rev), paste, collapse="")
-  
+
 plot_labels = function(labels, ylim){
   plot(1:length(labels)[1], type = 'n', xlab="",ylab="coefficient",xaxt="n",xlim = c(0.5,length(labels)[1]+0.5), ylim = ylim)+
     axis(side=1,at=1:length(labels)[1],labels=labels) + abline(h=0, col="grey")
@@ -71,6 +70,8 @@ range_coe <- function(beta_list){
   return(c(minimum,maximum))
 }
 
+
+# return position of string from vector
 mask_characters <- function(c1,c2){
   n = length(c1)
   m = length(c2)
@@ -85,19 +86,84 @@ mask_characters <- function(c1,c2){
   return(output)
 }
 
+
+# obtain mean square error from a linear model
+mse <- function(model){
+  mean(summary(model)$residuals^2)
+}
+
+# plot graph with error bar by value and deviation
+plot_mean_deviation <- function(dataset,label,mean,deviation){
+  plot(1:dim(dataset)[1],dataset[[mean]], pch=19,xlab="",ylab="coefficient",xaxt="n",xlim = c(0.5,dim(dataset)[1]+0.5),
+       ylim=c(min(dataset[mean]-1.96*dataset[deviation]),max((dataset[mean]+1.96*dataset[deviation]))))
+  lines(rbind(1:dim(dataset)[1],1:dim(dataset)[1],NA),rbind(dataset[[mean]]-1.96*dataset[[deviation]],dataset[[mean]]+1.96*dataset[[deviation]],NA))
+  axis(side=1,at=1:dim(dataset)[1],labels=dataset[[label]])
+}
+
+# extract coefficients from selected models
+extract_coefficient <- function(models, conditions) {
+  coefficients = NULL
+  
+  for (condition in conditions) {
+    column = numeric(models$beta[[condition]]@Dim[1])
+    column[models$beta[[condition]]@i+1] = models$beta[[condition]]@x
+    coefficients = cbind(coefficients,column)
+  }
+  coefficients = as.data.frame(coefficients)
+  names(coefficients) = conditions
+  row.names(coefficients) = names_motifs_valid
+  return(melt(setDT(coefficients, keep.rownames = TRUE), "rn"))
+}
+
+# plot selected models coefficient with line graph
+plot_models_line <- function(models, conditions, lineNumber) {
+  coefficients = NULL
+  
+  for (condition in conditions) {
+    column = numeric(models$beta[[condition]]@Dim[1])
+    column[models$beta[[condition]]@i+1] = models$beta[[condition]]@x
+    coefficients = cbind(coefficients,column)
+  }
+  coefficients = as.data.frame(coefficients)
+  names(coefficients) = conditions
+  row.names(coefficients) = names_motifs_valid
+  melt(setDT(coefficients, keep.rownames = TRUE), "rn")
+  
+  i = 1
+  while (i <= dim(coefficients)[1]) {
+    if((i+lineNumber)<= dim(coefficients)[1]){
+      print(
+      ggplot(data = melt(setDT(coefficients[i:(i+lineNumber-1)], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+        geom_line(aes(colour=rn))+
+        labs(x = "model", y = "regression coefficient")
+      )
+    }else{
+      print(
+      ggplot(data = melt(setDT(coefficients[i:dim(coefficients)[1]], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
+        geom_line(aes(colour=rn))+
+        labs(x = "model", y = "regression coefficient")
+      )
+    }
+    
+    i = i + lineNumber
+  }
+  
+}
+
+
 ```
 
 
 ## import data
 ***
 
-#### Expression level change of 6152 distinct genes under 173 different environmental stresses from Gasch's study
+### Expression level change of 6152 distinct genes under 173 different environmental stresses from Gasch's study
 
 In this project, we apply the data describes gene expression level in various environment condition from Gasch's study `Genomic Expression Programs in the Response of Yeast Cells to Environmental Changes`. To figure out how the expression level change, DNA microarrays were used.
 
 
 
-#### 69 sequence motifs found on RNA untranslated region from 3 different studies
+### 69 sequence motifs found on RNA untranslated region from 3 different studies
 
 The 69 sequence motifs we use in this project is from 3 different studies:
 
@@ -108,13 +174,13 @@ The 69 sequence motifs we use in this project is from 3 different studies:
 The rest 4 are from the study of Cheng (2017), four mRNA-stability related motifs in the 3′ UTR are found by De novo motif searching and their reliability and effect have been examined by linear mixed effect model, Fisher test P-value corrected with Benjamini–Hochberg, Wilcoxon rank-sum test and multivariate linear regression.
 
 
-#### UTR sequence of 4388 genes from Sun et al. (2013)
+### UTR sequence of 4388 genes from Sun et al. (2013)
 
 UTR sequence of 4388 genes are obtained from Sun, M. et al. (2013) ‘Global analysis of Eukaryotic mRNA degradation reveals Xrn1-dependent buffering of transcript levels’. 
 
 
 
-## Load Data
+# Load Data
 ***
 Load 69 published motifs (from Abhi's report) and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
 
@@ -136,12 +202,12 @@ expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt
 
 # convert all the expression data to number
 for (i in names(expressionLevel_Gasch)[3:176]) {
-  expressionLevel_Gasch[[i]] <- as.double(as.character(expressionLevel_Gasch[[i]]))
+  expressionLevel_Gasch[[i]] <- as.factor(as.character(expressionLevel_Gasch[[i]]))
 }
 
 ```
 
-#### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
 By converting all the motifs to regular expression, we are able to construct motifs frequency matrix which describes the frequency of 69 motifs among 4388 different genes.
 ```{r construct motif frequency, echo=FALSE}
 
@@ -169,25 +235,16 @@ names_environmental_stress = names(expressionLevel_Gasch)[4:length(expressionLev
 
 
 
-#### Merge motif frequency matrix with Gasch's data
+### Merge motif frequency matrix with Gasch's data
 Finally, we inner join the motif frequency matrix with Gasch's data and get the data frame we are going to explore. Each row represented data from one of the 4284 genes (since we have carried out inner join, only the genes shown in both tables are kept). There are 245 columns in total. 3 of them describe the basic information (short and formal name) of the gene represented by the row. 173 of them show how the gene expression level change under the certain environment condition and the other 69 of them respect the frequency of the 69 published motifs on the 3’UTR.
 ```{r merge motifs frequency with gasch data, echo=FALSE}
-
-# merge motifs
-fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
-
-# convert type of motifs frequency to factor for violin plotting
-fullTable_Gasch_double = fullTable_Gasch
-for(i in names_motifs_all){
-    fullTable_Gasch_double[[i]] <- as.double(as.character(fullTable_Gasch_double[[i]]))
-}
-
+fullTable_Gasch_withNa <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
 ```
 
 
-#### Remove motifs with frequency 0
+### Remove motifs with frequency 0
 ```{r echo=FALSE}
-motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
+motifs_count_sum <- colSums(fullTable_Gasch_withNa[names_motifs_all],na.rm=TRUE)
 remove_list = NULL
 
 for (i in names(motifs_count_sum)){
@@ -199,66 +256,191 @@ for (i in names(motifs_count_sum)){
 names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 ```
 
+### distribution of missing value
+Above all the expression level data, around 3% of them are missing value, Where most of the genes (94.8%) have a relatively complete expression levels' data (90%) while 41 genes (0.7%) have missing valves under more than quarter of environmental stresses.
 
-
-## investigate the missing value
-***
-
-#### 3% of the expression level data microarray are missing
-We noticed that, above all the expression level data, around 3% of them are missing value, Where most of the genes (94.8%) have a relatively complete expression levels' data (90%) while 41 genes (0.7%) have missing valves under more than quarter of environmental stresses.
 
 | number of genes | missing value (n) |
 | --------------- | ----------------- |
 | 755 (12.3%)     | 0                 |
-| 5073 (82.5%)    | 0 < n < 18        |
-| 283 (4.6%)      | 17 < n < 44       |
-| 41 (0.7%)       | 43 < n < 100      |
+| 4372 (71.1%)    | 0 < n < 9 (5%)    |
+| 701 (11.4%)     | 8 < n < 18 (10%)  |
+| 283 (4.6%)      | 17 < n < 44 (25%) |
+| 41 (0.7%)       | 43 < n < 99 (58%) |
 
 
-```{r eval=FALSE, echo=FALSE}
+```{r include=FALSE}
 sum(is.na(expressionLevel_Gasch[4:176])) #number of missing values
 sum(is.na(expressionLevel_Gasch[4:176]))/(173*6152) #ratio of missing value
 
 na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
 
-length(na_count_sum[na_count_sum > 0 & na_count_sum < 18])
+max(na_count_sum)
+length(na_count_sum[na_count_sum > 0 & na_count_sum < 9])
+length(na_count_sum[na_count_sum > 8 & na_count_sum < 18])
 length(na_count_sum[na_count_sum > 17 & na_count_sum < 44])
-length(na_count_sum[na_count_sum > 43 & na_count_sum < 100])
+length(na_count_sum[na_count_sum > 43 & na_count_sum <99])
 ```
+
+The 41 genes with missing values larger than 43 and smaller than 99
+```{r}
+names_genes = expressionLevel_Gasch$geneName
+names_genes[na_count_sum > 43 & na_count_sum <99]
+```
+
+
+
 ```{r echo=FALSE}
 na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
-hist(na_count_sum, breaks = c(0,1,2,5,10,20,30,50,70,100), main = 'histgram of percentage of missing value')
+hist(na_count_sum, breaks = c(0,9,18,44,100), xlab="amount of missing value",ylab = "density of genes", main = 'histogram of missing value (genes)')
+```
+
+On the other hand, the distribution of missing value by 173 environmental stress indicates that there are 14 environmental stress that have a relatively higher missing value ratio (larger than 10% but smaller than 23%)
+
+| number of environmental stresses | missing value (n)    |
+| -------------------------------- | -------------------- |
+| 0                                | 0                    |
+| 55 (31.8%)                       | 0 < n < 62 (1%)      |
+| 97 (56.1%)                       | 61 < n < 308 (5%)    |
+| 7 (4.0%)                         | 307 < n < 616 (10%)  |
+| 14 (8.1%)                        | 615 < n < 1385 (23%) |
+
+
+```{r include=FALSE}
+na_count_sum = colSums(is.na(expressionLevel_Gasch[4:176]))
+
+max(na_count_sum)
+length(na_count_sum[na_count_sum = 0])
+length(na_count_sum[na_count_sum > 0 & na_count_sum < 62])
+length(na_count_sum[na_count_sum > 61 & na_count_sum < 308])
+length(na_count_sum[na_count_sum > 307 & na_count_sum < 616])
+length(na_count_sum[na_count_sum > 615 & na_count_sum <1385])
+```
+
+```{r echo=FALSE}
+hist(na_count_sum, breaks = c(0,62,308,616,1385), xlab="amount of missing value",ylab = "density of environmental stresses", main = 'histogram of missing value (environmental stresses)')
+```
+
+the 14 environmental stresses with missing value ratio larger than 10% are listed here
+```{r}
+na_count_sum[na_count_sum>315]
+```
+
+
+### filter out gene with high value-missing ratio 
+The gene with large value-missing ratio could be caused by low abundance of mRNA in the cell which means there could be large errors for the measurements on these gene. It is better to remove them first.
+```{r}
+na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
+expressionLevel_Gasch_filtered = expressionLevel_Gasch[na_count_sum<18,]
 ```
 
 
 
-
-#### (1) replace missing value with 0
+### baseline performance: simply replace missing value with 0
 As one of the easiest way to deal with the missing values, we could simply replace them by 0
 ```{r}
-fullTable_Gasch_na2zero = fullTable_Gasch
+fullTable_Gasch_na2zero = fullTable_Gasch_withNa
 fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
 ```
 
+To estimate of the performance, we randomly knock out 0.1% of non-NA and check the mean square error.
+```{r}
+size_test = 1000
+row_numbers = c()
+column_numbers = c()
 
-#### (2) carry out inputation to replace missing data with substituted values
+matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+
+set.seed(362436666)
+row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
+column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+
+i = 1
+j = 1
+while (i <= round(size_test*2) & j <= size_test) {
+  if(!is.na(matrix[row_random[i],column_random[i]])){
+    row_numbers = c(row_numbers,row_random[i])
+    column_numbers = c(column_numbers,column_random[i])
+    j = j + 1
+  }
+  i = i + 1
+}
+
+
+se = 0
+for (i in 1:(j-1)) {
+  se = se + (as.double(matrix[row_numbers[i],column_numbers[i]]))^2
+}
+
+print(paste("estimate mse = ",se/j))
+```
+
+
+### fill missing data by imputation
 Applying imputation to estimate the missing values should be a much better way rather than simply ignore the missing values or replacing them by mean or 0 since it reduce the bias. Olga Troyanskaya et al. suggest in their article `Missing value estimation methods for DNA microarrays` that weighted K-nearest neighbors (KNNimpute) could be another sensitive method to deal with the missing value
 
 > We show that KNNimpute appears to provide a more robust and sensitive method for missing value estimation than SVDimpute, and both SVDimpute and KNNimpute surpass the commonly used row average method (as well as filling missing values with zeros).
 
+> The methods were then evaluated over each dataset as follows. Between 1 and 20% of the data were deleted at random to create test data sets. Each method was then used to recover the introduced missing values for each data set, and the estimated values were compared to those in the original data set. The metric used to assess the accuracy of estimation (henceforth referred to as normalized RMS error) was calculated as the Root Mean Squared (RMS) difference between the imputed matrix and the original matrix, divided by the average data value in the complete data set. 
+
 According to Olga Troyanskaya et al., when we consider gene A that has one missing value under environmental stress X, we could look for how the expression level of gene A change in other environmental stress Y and looking for k other genes B that show similar behavior as gene A. Then we fill the missing value by the weighted average of genes B. The contribution of each gene is weighted by similarity of its expression to that of gene A. 
 
+we can estimate the performance of imputation by randomly knocking out 0.1% of non-NA and check the mean square error between estimation and actual value.
 ```{r}
-# unimplemented
+size_test = 1000
+row_numbers = c()
+column_numbers = c()
+
+matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+matrix_complete = matrix
+
+set.seed(362436666)
+row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
+column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+
+
+i = 1
+j = 1
+while (i <= round(size_test*2) & j <= size_test) {
+  if(!is.na(matrix[row_random[i],column_random[i]])){
+    row_numbers = c(row_numbers,row_random[i])
+    column_numbers = c(column_numbers,column_random[i])
+    matrix[row_random[i],column_random[i]] = NA
+    j = j + 1
+  }
+  i = i + 1
+}
+
+
+expressionLevel_impute_knn = (impute.knn(matrix ,k = 20, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+
+i = 1
+se = 0
+while (i < j) {
+  se = se + (as.double(matrix_complete[row_numbers[i],column_numbers[i]]) - as.double(expressionLevel_impute_knn[row_numbers[i],column_numbers[i]]))^2
+  i = i + 1
+}
+
+print(paste("estimate mse = ",se/j))
+```
+
+
+```{r echo=FALSE}
+expressionLevel_impute_knn = (impute.knn(as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)]) ,k = 20, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+
+expressionLevel_impute_knn = merge(expressionLevel_Gasch_filtered[1:3],expressionLevel_impute_knn, by = 0, sort = FALSE)
+expressionLevel_impute_knn$Row.names <- NULL
+
+fullTable_Gasch_impute_knn <- merge(expressionLevel_impute_knn,ref_motifs,by = "geneName")
 ```
 
 
 
-## glmnet group lasso notes
+# glmnet group lasso notes
 ***
 
 
-#### basic idea about glmnet group lasso
+### basic idea about glmnet group lasso
 
 reference:
 
@@ -298,7 +480,7 @@ $$
 when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet. In group lasso, we summing all the penalty
 
 
-#### compare L1 and L2
+### compare L1 and L2
 
 - L1 could have more than one optimal solution while L2 only has one
 - L1 is more robust. no sensitive to extreme value
@@ -306,64 +488,87 @@ when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quad
 - L2 is easier to calculate
 
 
-## multi-task learning on all 173 environmental stress
+# multi-task learning on all 173 environmental stress
 ***
 
 ```{r}
-names_condition = colnames(expressionLevel_Gasch, do.NULL = TRUE, prefix = "col")[4:176]
-
 x = as.matrix(fullTable_Gasch_na2zero[names_motifs_valid])
-y = as.matrix(fullTable_Gasch_na2zero[names_condition])
+y = as.matrix(fullTable_Gasch_na2zero[names_environmental_stress])
 
 cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 ```
 
 
-#### pick lambda with 10-fold cross validation
+### pick lambda with 10-fold cross validation
 `lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical dashed lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
 
 ```{r}
 plot(cv_models_all)
 ```
 
-#### training models with the lambda value that gives minimum loss. a majority of coefficients are very close to 0, the effect of penalty is significant.
-Here we let alpha=1 as default to achieve a group-lasso penalty, and otherwise it mixes with quadratic just like elasticnet.
-```{r echo=FALSE}
-models_all = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
+### training model with selected lambda
+training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
+```{r}
+models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
+models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
+
+paste("lambda.min =",cv_models_all$lambda.min)
+paste("lambda.1se =",cv_models_all$lambda.1se)
 ```
 
-
-```{r}
+### the penalize effect with λ = lambda.1se is much stronger than that with λ = lambda.min
+We summary coefficients from all the models together to compare the penalized effect of models with different λ values. The model with λ = lambda.1se penalizes more than 90% of coefficients to 0 while the model with λ = lambda.min keep more than half of its coefficients non-zero.
+```{r echo=FALSE}
 coefficients = NULL
-for (condition in names_condition) {
-  coefficients = c(coefficients,models_all$beta[[condition]]@x)
+for (condition in names_environmental_stress) {
+  coefficients = c(coefficients,models_all_minLambda$beta[[condition]]@x)
 }
 
-hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1,0,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient')
-
+hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.min')
 ```
 
-#### 28% of the coefficient are penalized to zero
-
-```{r }
+```{r echo=FALSE}
 count_nonzero_coefficient = 0
 
 for (condition in names_environmental_stress) {
-  count_nonzero_coefficient = count_nonzero_coefficient + models_all$beta[[condition]]@p[2]
+  count_nonzero_coefficient = count_nonzero_coefficient + models_all_minLambda$beta[[condition]]@p[2]
 }
 
 count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
 
-1 - (count_nonzero_coefficient/count_all_coefficient)
+paste("percentage of non-zero coefficient in models with λmin=", count_nonzero_coefficient/count_all_coefficient)
+```
+
+
+```{r echo=FALSE}
+coefficients = NULL
+for (condition in names_condition) {
+  coefficients = c(coefficients,models_all_1seLambda$beta[[condition]]@x)
+}
+
+hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.1se')
 
 ```
 
 
-#### coefficient shift to zero as the time after environmental stress increasing
+```{r echo=FALSE}
+count_nonzero_coefficient = 0
 
+for (condition in names_environmental_stress) {
+  count_nonzero_coefficient = count_nonzero_coefficient + models_all_1seLambda$beta[[condition]]@p[2]
+}
+
+count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
+
+paste("percentage of non-zero coefficient in models with λ1se =", count_nonzero_coefficient/count_all_coefficient)
+```
+
+
+### regulatory effect of motifs decrease as time pass in heat shock
+Here we plot a graph to show how the coefficient given to each motif change across the timeline after heat shock. For most of the motifs, their coefficients increase with shortly delay and reach their peak at 15mins. Than they gradually shift to 0 as time past. An explanation of the 15mins delay is that the cis-regulatory elements could regulate the expression level by adjusting the stability of mRNA which may need some time to decay.
 ```{r include=FALSE}
 {
-  names_temperature_condition = vector(mode="character", length=5)
+  names_temperature_condition = vector(mode="character", length=7)
   names_temperature_condition[1] = "hs_05min_hs-1"
   names_temperature_condition[2] = "hs_10min_hs-1"
   names_temperature_condition[3] = "hs_15min_hs-1"
@@ -373,44 +578,88 @@ count_all_coefficient = length(names_environmental_stress)*length(names_motifs_v
   names_temperature_condition[7] = "hs_80min_hs-1"
 }
 
+```
+
+```{r fig.height=10, fig.width=12}
+plot_models_line(models_all_minLambda, names_temperature_condition, 10)
+```
+
+### compare coefficients under heat shock and heat shock with sorbital (uncompleted)
+Since we are interesting in investigating how motifs's regulatory effect change under different condition, we compare the regression coefficient between two models: heat shock with sorbitol and heat shock without sorbitol.
+
+```{r}
 {
-  coefficients = NULL
-  
-  for (condition in names_temperature_condition) {
-    column = numeric(models_all$beta[[condition]]@Dim[1])
-    column[models_all$beta[[condition]]@i+1] = models_all$beta[[condition]]@x
-    coefficients = cbind(coefficients,column)
-  }
-  coefficients = as.data.frame(coefficients)
-  names(coefficients) = names_temperature_condition
-  row.names(coefficients) = names_motifs_valid
-  melt(setDT(coefficients, keep.rownames = TRUE), "rn")
+  names_sorbitol_condition = vector(mode="character", length=3)
+  names_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
 }
+
+{
+  names_nosorbitol_condition = vector(mode="character", length=3)
+  names_nosorbitol_condition[1] = "hs_29to33_05min"
+  names_nosorbitol_condition[2] = "hs_29to33_15min"
+  names_nosorbitol_condition[3] = "hs_29to33_30min"
+}
+
+coefficients = extract_coefficient(models_all_minLambda,c(names_sorbitol_condition,names_nosorbitol_condition))
 ```
 
-```{r echo=FALSE, fig.height=10, fig.width=12}
+```{r fig.height=10, fig.width=12}
+plot_models_line(models_all_minLambda, names_nosorbitol_condition, 10)
+```
 
-
-ggplot(data = melt(setDT(coefficients[1:10], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[11:20], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[21:30], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[31:40], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-ggplot(data = melt(setDT(coefficients[41:50], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-  geom_line(aes(colour=rn))
-
-
+```{r fig.height=10, fig.width=12}
+plot_models_line(models_all_minLambda, names_sorbitol_condition, 10)
 ```
 
 
-#### Analysis the Bias
+```{r echo=FALSE}
+coefficients_TGAGGGCTA = coefficients[coefficients$rn == "TGAGGGCTA",]
+coefficients_TGAGGGCTA$time_min = c(5,15,30,5,15,30)
+coefficients_TGAGGGCTA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of TGAGGGCTA")
+  
+```
+
+```{r echo=FALSE}
+coefficients_UGUAHMNUA = coefficients[coefficients$rn == "UGUAHMNUA",]
+coefficients_UGUAHMNUA$time_min = c(5,15,30,5,15,30)
+coefficients_UGUAHMNUA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_UGUAHMNUA, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of UGUAHMNUA")
+```
+
+```{r echo=FALSE}
+coefficients_TGAGGGCTA = coefficients[coefficients$rn == "TGAGGGCTA",]
+coefficients_TGAGGGCTA$time_min = c(5,15,30,5,15,30)
+coefficients_TGAGGGCTA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of TGAGGGCTA")
+```
+
+
+```{r}
+coefficients_UKWCGRGGN = coefficients[coefficients$rn == "UKWCGRGGN",]
+coefficients_UKWCGRGGN$time_min = c(5,15,30,5,15,30)
+coefficients_UKWCGRGGN$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
+ggplot(data = coefficients_UKWCGRGGN, aes(x=time_min,y=value,group = sorbitol)) +
+  geom_line(aes(colour=sorbitol))+
+  labs(x = "after heat shock from 29C to 33C", y = "value")+
+  ggtitle("regression coefficient of UKWCGRGGN")
+```
+
+
+
+
+# Analysis the Bias
 The bias of each model shows the change of expression level that cannot be explained by these motifs
 here we calculate the percentage of it against the mean of change in expression level to estimate how much of the regulation effect cannot be expalined by the model. The estimation is base on many assumptions and could be very ambiguous. 
 
@@ -420,23 +669,23 @@ $$
 
 
 ```{r} 
-models_all$a0/colMeans(fullTable_Gasch_double[names_condition], na.rm = TRUE)
+models_all_minLambda$a0/colMeans(fullTable_Gasch_withNa[names_environmental_stress], na.rm = TRUE)
 ```
 
 
-#### compare coefficient under oopposite environmental stress
+### compare coefficient under oopposite environmental stress
 ```{r echo=FALSE, fig.height=10, fig.width=12}
 {
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_points(models_all$beta$`hs_15min_hs-1`,'red')
-  plot_points(models_all$beta$`hs_37to25_15min`,'blue')
+  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
+  plot_points(models_all_minLambda$beta$`hs_15min_hs-1`,'red')
+  plot_points(models_all_minLambda$beta$`hs_37to25_15min`,'blue')
   legend('bottomleft', legend=c('heat shock','cool down'), col=c('red','blue'), lty = 1)
 }
 
 {
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_line(models_all$beta$`hs_15min_hs-1`,'red')
-  plot_line(models_all$beta$`hs_37to25_15min`,'blue')
+  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
+  plot_line(models_all_minLambda$beta$`hs_15min_hs-1`,'red')
+  plot_line(models_all_minLambda$beta$`hs_37to25_15min`,'blue')
   legend('bottomleft', legend=c('heat shock','cool down'), col=c('red','blue'), lty = 1)
 }
 
@@ -444,42 +693,42 @@ models_all$a0/colMeans(fullTable_Gasch_double[names_condition], na.rm = TRUE)
 
 
 
-#### compare coefficient of heat shock with and without sorbital - 5min
+### compare coefficient of heat shock with and without sorbital - 5min
 check if the `additional effect` mension by Gasch is shown in the models. The effect is obvious at first and decrease in 30 mins
 ```{r echo=FALSE, fig.height=10, fig.width=12}
 
 {
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_line(models_all$beta$`hs_29to33_05min`,'red')
-  plot_line(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_05min`,'blue')
-  plot_line(models_all$beta$`1M_sorbitol_05min`,'forestgreen')
+  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
+  plot_line(models_all_minLambda$beta$`hs_29to33_05min`,'red')
+  plot_line(models_all_minLambda$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_05min`,'blue')
+  plot_line(models_all_minLambda$beta$`1M_sorbitol_05min`,'forestgreen')
   legend('bottomleft', legend=c('hs with sorbitol','hs without sorbitol','sorbitol without hs'), col=c('red','blue','forestgreen'), lty = 1)
 }
 ```
 
 
 
-#### compare coefficient of heat shock with and without sorbital - 15min
+### compare coefficient of heat shock with and without sorbital - 15min
 ```{r echo=FALSE, fig.height=10, fig.width=12}
 
 {
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_line(models_all$beta$`hs_29to33_15min`,'red')
-  plot_line(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`,'blue')
-  plot_line(models_all$beta$`1M_sorbitol_15min`,'forestgreen')
+  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
+  plot_line(models_all_minLambda$beta$`hs_29to33_15min`,'red')
+  plot_line(models_all_minLambda$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`,'blue')
+  plot_line(models_all_minLambda$beta$`1M_sorbitol_15min`,'forestgreen')
   legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
 }
 ```
 
 
-#### compare coefficient of heat shock with and without sorbital - 30min
+### compare coefficient of heat shock with and without sorbital - 30min
 ```{r echo=FALSE, fig.height=10, fig.width=12}
 
 {
-  plot_labels(names_motifs_valid, range_coe(models_all$beta))
-  plot_line(models_all$beta$`hs_29to33_30min`,'red')
-  plot_line(models_all$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_30min`,'blue')
-  plot_line(models_all$beta$`1M_sorbitol_30min`,'forestgreen')
+  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
+  plot_line(models_all_minLambda$beta$`hs_29to33_30min`,'red')
+  plot_line(models_all_minLambda$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_30min`,'blue')
+  plot_line(models_all_minLambda$beta$`1M_sorbitol_30min`,'forestgreen')
   legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
 }
 ```

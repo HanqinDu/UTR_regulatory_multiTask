@@ -1,5 +1,5 @@
 ---
-title: "interim summary"
+title: "project summary"
 author: "Hanqin Du"
 date: "2020/2/1"
 output: html_document
@@ -11,17 +11,55 @@ output: html_document
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ```
 
+
+# recent progress (2020/02/12 ~ 2020/02/18)
+This week, we focused on dealing with missing value by removing genes with a high value-missing ratio and fill the rest missing value by imputation.
+[(1)](#filterGene) 5.3% of genes with a high value-missing ratio (>10%) are removed from the design matrix. Since these missing values could be caused by low abundance of mRNA in the cell, there could be relatively large errors on the measurements.
+[(2)](#imputation) kNN imputation has been applied to fill the rest missing value. The performance is estimated by randomly knocking out 0.1% of non-NA values, filling by imputation and computing the mean square error. [(3)](#replaceZero)In a similar way, the performance of filling missing values with 0 is computed for comparison.
+
+We have been looking for a method to evaluate group-lasso models. generically, the usual constructs like p-values, confidence intervals, etc., do not exist for lasso estimate. In a similar study called 'Supervised group Lasso with applications to microarray data analysis' by Shuangge Ma et al., the models are evaluated by Leave-One-Out(LOO) cross-validation. However, considering that we are interested in the reasonable and reliable coefficients given to each CRE but not high accuracy models, LOO is not quite suitable for our project. On the other hand, Richard Lockhart et al.(2014) proposed a significance test called `covariance test statistic`. According to their article: "such significance test is for lasso model that does not employ resampling or data splitting, but instead uses the full data set as given, and proposes a test statistic that has a simple and exact asymptotic null distribution." 
+
+I'm currently reading the paper `A SIGNIFICANCE TEST FOR THE LASSO` of Richard Lockhart et al.(2014) to see if the `covariance test statistic` would work in our project.
+
+
 # project discription
 Gene expression is the process through which cells generate diversity and resilience to environmental changes. It consists of two steps: transcription, where an intermediate molecule (mRNA) is produced from the DNA, and translation of mRNA into protein. The rate of transcription and translation can be regulated by regulatory elements acting in both cis and trans. 3'UTR, 5'UTR, and promoter are known as powerful regulatory processes that determine the rate of mRNA synthesis and decay.
 
 In this project, we are interested in using these cis-regulatory features to predict multidimensional output that indicates how the mRNA abundance change in multiple environmental conditions. Since our goal is to quantify the effect of different elements, we should avoid clustering and go straight from element to expression pattern. Linear models with multidimensional lasso (known as an algorithm of multi-task learning) which is already implemented in the glmnet package should be a good start. As an extension, we may apply to multiple states of mRNA processing like splicing, decay, and translation by combining multiple data sets. Finally, we can carry out a quantitative analysis of the contribution of motifs in different types of CRE and ask which regions make more of a contribution to dynamic changes in gene expression.
 
 
+
+# Index
+
+- ### Part 1: Assess the rationality of group lasso
+
+  - [Load library and function](#loadFunction)
+  - [Construct the design matrix](#constructDesignMatrix)
+  - [19 motifs are removed from list considering their low frequency on 3’UTR](#removeLowFrequencyMotifs)
+  - [4 significant motifs on heat-shock-relevant environmental stress](#significantMotifsHS)
+  - [9 heat-shock-relevant motifs are selected from linear models](#9significantMotifsHS)
+  - [Identify potential relationships between tasks](#potentialRelationshipTask)
+
+- ### Part 2: apply group lasso
+
+  - dealing with missing value
+    - [distribution of missing value](#distributionMissingValue)
+    - [filter out gene with high value-missing ratio](#filterGene)
+    - [fill missing value by kNN imputation](#imputation)
+    - [baseline: replace missing value with 0](#replaceZero)
+  - fitting models
+    - [choose lambda from 10-fold cross validation](#crossValidation)
+    - [training model with selected lambda](#trainingModels)
+  - evaluate models
+    - [regulatory effect of motifs decrease as time pass in heat shock](#regulatoryEffectDecrease)
+    - compare coefficients under heat shock and heat shock with sorbital (uncompleted)
+
+
 # Part 1: Assess the rationality of group lasso
 This is the first part of this project. Before applying multi-task learning, we would like to investigate the data and assess if it is reasonable to apply group lasso on them.
 
 
-### Load library and function
+### <a id="loadFunction"> Load library and function </a>
 
 ```{r load library, results='hide', message=FALSE}
 library(data.table)
@@ -30,6 +68,7 @@ library(lmodel2)
 library(splitstackshape)
 library(gridExtra)
 library(glmnet)
+library(impute)
 ```
 
 
@@ -102,7 +141,7 @@ plot_models_line <- function(models, conditions, lineNumber) {
 ```
 
 
-### Construct the design matrix
+### <a id="constructDesignMatrix"> Construct the design matrix </a>
 
 ##### Expression level change of 6152 distinct genes under 173 different environmental stresses from Gasch's study
 In this project, we apply the data describes gene expression level in various environment condition from Gasch's study `Genomic Expression Programs in the Response of Yeast Cells to Environmental Changes`. To figure out how the expression level change, DNA microarrays were used to measure the relatively abundance of mRNA before and after a series of environmental stresses.
@@ -179,7 +218,7 @@ for(i in names_motifs_all){
 
 
 
-### 19 motifs are removed from list considering their low frequency on 3'UTR
+### <a id="removeLowFrequencyMotifs"> 19 motifs are removed from list considering their low frequency on 3'UTR </a>
 We matching the 69 motifs on every gene sequence to compute the frequency matrix which could be used as the design matrix of our models. The distribution of the frequency of each motif across all the genes is very unbalanced. 19 motifs have never been investigated from any of the 3'UTR from the study of Sun et al. Therefore, we temporarily remove them.
 
 | Frequency  | number of motifs (n) |
@@ -215,7 +254,7 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 
 
 
-### 4 significant motifs on heat-shock-relevant environmental stress.
+### <a id="significantMotifsHS"> 4 significant motifs on heat-shock-relevant environmental stress.</a>
 To investigate how the expression level changes linearly depends on the motifs, we calculate the Pearson correlation coefficient (PCC) between them. Pearson correlation coefficient is a measure of the linear correlation between two variables X and Y:
 $$
 p_{x,y}= {cov(X,Y)\over \sigma_X \sigma_Y}
@@ -253,7 +292,7 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','
 ```
 
 
-### 9 heat-shock-relevant motifs are selected from linear models
+### <a id="9significantMotifsHS"> 9 heat-shock-relevant motifs are selected from linear models </a>
 
 Before fitting the linear model, we temporarily remove the motifs with a total frequency lower than 5 since we are not confident enough to tell whether a low-frequency motif depends linearly on the heat-shock related environment condition. Then, we fitted the linear model with the `lm()` function with default least squares method:
 $$
@@ -312,7 +351,7 @@ summary(model_hs_17to37)
 
 
 
-### Identify potential relationships between tasks
+### <a id="potentialRelationshipTask"> Identify potential relationships between tasks </a>
 
 
 To penalty the irrelevant features and ensure the comparison across the models, we plan to apply group lasso. However, before applying the multi-task learning method, we want to ensure there are potential relationships between tasks.
@@ -417,39 +456,181 @@ $$
 $$
 
 
-### distribution of missing value
+### <a id="distributionMissingValue"> distribution of missing value </a>
 Above all the expression level data, around 3% of them are missing value, Where most of the genes (94.8%) have a relatively complete expression levels' data (90%) while 41 genes (0.7%) have missing valves under more than quarter of environmental stresses.
 
 
 | number of genes | missing value (n) |
 | --------------- | ----------------- |
 | 755 (12.3%)     | 0                 |
-| 5073 (82.5%)    | 0 < n < 18        |
-| 283 (4.6%)      | 17 < n < 44       |
-| 41 (0.7%)       | 43 < n < 100      |
+| 4372 (71.1%)    | 0 < n < 9 (5%)    |
+| 701 (11.4%)     | 8 < n < 18 (10%)  |
+| 283 (4.6%)      | 17 < n < 44 (25%) |
+| 41 (0.7%)       | 43 < n < 99 (58%) |
 
 
-```{r eval=FALSE, echo=FALSE}
+```{r include=FALSE}
 sum(is.na(expressionLevel_Gasch[4:176])) #number of missing values
 sum(is.na(expressionLevel_Gasch[4:176]))/(173*6152) #ratio of missing value
 
 na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
 
-length(na_count_sum[na_count_sum > 0 & na_count_sum < 18])
+max(na_count_sum)
+length(na_count_sum[na_count_sum > 0 & na_count_sum < 9])
+length(na_count_sum[na_count_sum > 8 & na_count_sum < 18])
 length(na_count_sum[na_count_sum > 17 & na_count_sum < 44])
-length(na_count_sum[na_count_sum > 43 & na_count_sum < 100])
+length(na_count_sum[na_count_sum > 43 & na_count_sum <99])
 ```
+
+The 41 genes with missing values larger than 43 and smaller than 99
+```{r}
+names_genes = expressionLevel_Gasch$geneName
+names_genes[na_count_sum > 43 & na_count_sum <99]
+```
+
+
+
 ```{r echo=FALSE}
 na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
-hist(na_count_sum, breaks = c(0,1,2,5,10,20,30,50,70,100), main = 'histgram of percentage of missing value')
+hist(na_count_sum, breaks = c(0,9,18,44,100), xlab="amount of missing value",ylab = "density of genes", main = 'histogram of missing value (genes)')
 ```
 
-Applying imputation to estimate the missing values should be a much better way rather than simply ignore the missing values or replacing them by mean or 0 since it reduces the bias. Olga Troyanskaya et al. suggest in their article `Missing value estimation methods for DNA microarrays` that weighted K-nearest neighbors (KNNimpute) could be another sensitive method to deal with the missing value. However, our temporary solution is replacing them with 0.
+On the other hand, the distribution of missing value by 173 environmental stress indicates that there are 14 environmental stress that have a relatively higher missing value ratio (larger than 10% but smaller than 23%)
 
+| number of environmental stresses | missing value (n)    |
+| -------------------------------- | -------------------- |
+| 0                                | 0                    |
+| 55 (31.8%)                       | 0 < n < 62 (1%)      |
+| 97 (56.1%)                       | 61 < n < 308 (5%)    |
+| 7 (4.0%)                         | 307 < n < 616 (10%)  |
+| 14 (8.1%)                        | 615 < n < 1385 (23%) |
+
+
+```{r include=FALSE}
+na_count_sum = colSums(is.na(expressionLevel_Gasch[4:176]))
+
+max(na_count_sum)
+length(na_count_sum[na_count_sum = 0])
+length(na_count_sum[na_count_sum > 0 & na_count_sum < 62])
+length(na_count_sum[na_count_sum > 61 & na_count_sum < 308])
+length(na_count_sum[na_count_sum > 307 & na_count_sum < 616])
+length(na_count_sum[na_count_sum > 615 & na_count_sum <1385])
+```
+
+```{r echo=FALSE}
+hist(na_count_sum, breaks = c(0,62,308,616,1385), xlab="amount of missing value",ylab = "density of environmental stresses", main = 'histogram of missing value (environmental stresses)')
+```
+
+the 14 environmental stresses with missing value ratio larger than 10% are listed here
+```{r}
+na_count_sum[na_count_sum>315]
+```
+
+
+### <a id="filterGene"> filter out gene with high value-missing ratio </a>
+The gene with high missing value could be caused by low abundance of mRNA in the cell which means there could be large errors for the measurements on these gene. It is better to remove them first.
+```{r}
+na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
+expressionLevel_Gasch_filtered = expressionLevel_Gasch[na_count_sum<18,]
+```
+
+
+
+### <a id="imputation"> fill missing data by imputation </a>
+Applying imputation to estimate the missing values should be a much better way rather than simply ignore the missing values or replacing them by mean or 0 since it reduce the bias. Olga Troyanskaya et al.(2001) suggested that weighted K-nearest neighbors (KNNimpute) could be another sensitive method to deal with the missing value.
+
+According to their article, when we consider gene A that has one missing value under environmental stress X, we could look for how the expression level of gene A change in other environmental stress Y and looking for k other genes B that show similar behavior as gene A. Then we fill the missing value by the weighted average of genes B. The contribution of each gene is weighted by similarity of its expression to that of gene A. 
+
+we can estimate the performance of imputation by randomly knocking out 0.1% of non-NA and check the mean square error between estimation and actual value.
+```{r}
+size_test = 1000
+row_numbers = c()
+column_numbers = c()
+
+matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+matrix_complete = matrix
+
+set.seed(362436666)
+row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
+column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+
+
+i = 1
+j = 1
+while (i <= round(size_test*2) & j <= size_test) {
+  if(!is.na(matrix[row_random[i],column_random[i]])){
+    row_numbers = c(row_numbers,row_random[i])
+    column_numbers = c(column_numbers,column_random[i])
+    matrix[row_random[i],column_random[i]] = NA
+    j = j + 1
+  }
+  i = i + 1
+}
+
+
+expressionLevel_impute_knn = (impute.knn(matrix ,k = 20, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+
+i = 1
+se = 0
+while (i < j) {
+  se = se + (as.double(matrix_complete[row_numbers[i],column_numbers[i]]) - as.double(expressionLevel_impute_knn[row_numbers[i],column_numbers[i]]))^2
+  i = i + 1
+}
+
+print(paste("estimate mse = ",se/j))
+```
+
+
+```{r echo=FALSE}
+expressionLevel_impute_knn = (impute.knn(as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)]) ,k = 20, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+
+expressionLevel_impute_knn = merge(expressionLevel_Gasch_filtered[1:3],expressionLevel_impute_knn, by = 0, sort = FALSE)
+expressionLevel_impute_knn$Row.names <- NULL
+
+fullTable_Gasch_impute_knn <- merge(expressionLevel_impute_knn,ref_motifs,by = "geneName")
+```
+
+
+
+### <a id="replaceZero"> baseline performance: simply replace missing value with 0 </a>
+As one of the easiest way to deal with the missing values, we could simply replace them by 0
 ```{r}
 fullTable_Gasch_na2zero = fullTable_Gasch
 fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
 ```
+
+To estimate of the performance, we randomly knock out 0.1% of non-NA and check the mean square error.
+```{r}
+size_test = 1000
+row_numbers = c()
+column_numbers = c()
+
+matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+
+set.seed(362436666)
+row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
+column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+
+i = 1
+j = 1
+while (i <= round(size_test*2) & j <= size_test) {
+  if(!is.na(matrix[row_random[i],column_random[i]])){
+    row_numbers = c(row_numbers,row_random[i])
+    column_numbers = c(column_numbers,column_random[i])
+    j = j + 1
+  }
+  i = i + 1
+}
+
+
+se = 0
+for (i in 1:(j-1)) {
+  se = se + (as.double(matrix[row_numbers[i],column_numbers[i]]))^2
+}
+
+print(paste("estimate mse = ",se/j))
+```
+
 
 
 ### consider motifs with non-zero frequency
@@ -467,7 +648,7 @@ for (i in names(motifs_count_sum)){
 names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 ```
 
-### choose lambda from 10-fold cross validation
+### <a id="crossValidation"> choose lambda from 10-fold cross validation </a>
 We need to set the hyperparameter lambda to control the effect of penalization. A common approch to this is by cross validation.
 ```{r echo=FALSE}
 names_condition = colnames(expressionLevel_Gasch, do.NULL = TRUE, prefix = "col")[4:176]
@@ -483,7 +664,7 @@ plot(cv_models_all)
 ```
 `lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical dashed lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
 
-### training model with selected lambda
+### <a id="trainingModels"> training model with selected lambda </a>
 training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
 ```{r}
 models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
@@ -542,7 +723,7 @@ paste("percentage of non-zero coefficient =", count_nonzero_coefficient/count_al
 ```
 
 
-### regulatory effect of motifs decrease as time pass in heat shock
+### <a id="regulatoryEffectDecrease"> regulatory effect of motifs decrease as time pass in heat shock </a>
 Here we plot a graph to show how the coefficient given to each motif change across the timeline after heat shock. For most of the motifs, their coefficients increase with shortly delay and reach their peak at 15mins. Than they gradually shift to 0 as time past. An explanation of the 15mins delay is that the cis-regulatory elements could regulate the expression level by adjusting the stability of mRNA which may need some time to decay.
 ```{r include=FALSE}
 {
@@ -626,7 +807,7 @@ ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) 
 
 
 
-```{r}
+```{r echo=FALSE}
 coefficients_UKWCGRGGN = coefficients[coefficients$rn == "UKWCGRGGN",]
 coefficients_UKWCGRGGN$time_min = c(5,15,30,5,15,30)
 coefficients_UKWCGRGGN$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
