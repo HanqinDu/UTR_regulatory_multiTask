@@ -135,13 +135,15 @@ plot_models_line <- function(models, conditions, lineNumber) {
       print(
       ggplot(data = melt(setDT(coefficients[i:(i+lineNumber-1)], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
         geom_line(aes(colour=rn))+
-        labs(x = "model", y = "regression coefficient")
+        labs(x = "model", y = "regression coefficient") +
+        theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1),axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
     }else{
       print(
       ggplot(data = melt(setDT(coefficients[i:dim(coefficients)[1]], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
         geom_line(aes(colour=rn))+
-        labs(x = "model", y = "regression coefficient")
+        labs(x = "model", y = "regression coefficient") +
+        theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
     }
     
@@ -238,13 +240,13 @@ names_environmental_stress = names(expressionLevel_Gasch)[4:length(expressionLev
 ### Merge motif frequency matrix with Gasch's data
 Finally, we inner join the motif frequency matrix with Gasch's data and get the data frame we are going to explore. Each row represented data from one of the 4284 genes (since we have carried out inner join, only the genes shown in both tables are kept). There are 245 columns in total. 3 of them describe the basic information (short and formal name) of the gene represented by the row. 173 of them show how the gene expression level change under the certain environment condition and the other 69 of them respect the frequency of the 69 published motifs on the 3’UTR.
 ```{r merge motifs frequency with gasch data, echo=FALSE}
-fullTable_Gasch_withNa <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
+fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
 ```
 
 
 ### Remove motifs with frequency 0
 ```{r echo=FALSE}
-motifs_count_sum <- colSums(fullTable_Gasch_withNa[names_motifs_all],na.rm=TRUE)
+motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
 remove_list = NULL
 
 for (i in names(motifs_count_sum)){
@@ -291,8 +293,11 @@ names_genes[na_count_sum > 43 & na_count_sum <99]
 
 
 ```{r echo=FALSE}
+
 na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
-hist(na_count_sum, breaks = c(0,9,18,44,100), xlab="amount of missing value",ylab = "density of genes", main = 'histogram of missing value (genes)')
+histogram <- hist(na_count_sum, breaks = c(0,8,17,43,99),  plot = FALSE)
+plot(histogram, labels = paste(histogram$counts), ylim = c(0, 1.08*max(histogram$density)),xlab="amount of missing value",ylab = "density of genes", main = 'histogram of missing value (genes)')
+
 ```
 
 On the other hand, the distribution of missing value by 173 environmental stress indicates that there are 14 environmental stress that have a relatively higher missing value ratio (larger than 10% but smaller than 23%)
@@ -318,7 +323,10 @@ length(na_count_sum[na_count_sum > 615 & na_count_sum <1385])
 ```
 
 ```{r echo=FALSE}
-hist(na_count_sum, breaks = c(0,62,308,616,1385), xlab="amount of missing value",ylab = "density of environmental stresses", main = 'histogram of missing value (environmental stresses)')
+
+histogram = hist(na_count_sum, breaks = c(0,61,307,615,1384),  plot = FALSE)
+plot(histogram, labels = paste(histogram$counts), ylim = c(0, 1.08*max(histogram$density)),xlab="amount of missing value",ylab = "density of environmental stresses", main = 'histogram of missing value (environmental stresses)')
+
 ```
 
 the 14 environmental stresses with missing value ratio larger than 10% are listed here
@@ -336,46 +344,6 @@ expressionLevel_Gasch_filtered = expressionLevel_Gasch[na_count_sum<18,]
 
 
 
-### baseline performance: simply replace missing value with 0
-As one of the easiest way to deal with the missing values, we could simply replace them by 0
-```{r}
-fullTable_Gasch_na2zero = fullTable_Gasch_withNa
-fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
-```
-
-To estimate of the performance, we randomly knock out 0.1% of non-NA and check the mean square error.
-```{r}
-size_test = 1000
-row_numbers = c()
-column_numbers = c()
-
-matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
-
-set.seed(362436666)
-row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
-column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
-
-i = 1
-j = 1
-while (i <= round(size_test*2) & j <= size_test) {
-  if(!is.na(matrix[row_random[i],column_random[i]])){
-    row_numbers = c(row_numbers,row_random[i])
-    column_numbers = c(column_numbers,column_random[i])
-    j = j + 1
-  }
-  i = i + 1
-}
-
-
-se = 0
-for (i in 1:(j-1)) {
-  se = se + (as.double(matrix[row_numbers[i],column_numbers[i]]))^2
-}
-
-print(paste("estimate mse = ",se/j))
-```
-
-
 ### fill missing data by imputation
 Applying imputation to estimate the missing values should be a much better way rather than simply ignore the missing values or replacing them by mean or 0 since it reduce the bias. Olga Troyanskaya et al. suggest in their article `Missing value estimation methods for DNA microarrays` that weighted K-nearest neighbors (KNNimpute) could be another sensitive method to deal with the missing value
 
@@ -386,47 +354,83 @@ Applying imputation to estimate the missing values should be a much better way r
 According to Olga Troyanskaya et al., when we consider gene A that has one missing value under environmental stress X, we could look for how the expression level of gene A change in other environmental stress Y and looking for k other genes B that show similar behavior as gene A. Then we fill the missing value by the weighted average of genes B. The contribution of each gene is weighted by similarity of its expression to that of gene A. 
 
 we can estimate the performance of imputation by randomly knocking out 0.1% of non-NA and check the mean square error between estimation and actual value.
-```{r}
+```{r echo=FALSE}
+k_value_validation_df = data.frame(matrix(ncol = 2, nrow = 0))
+
+k_list = c(2,5,8,11,14,17,20,23,27,30)
 size_test = 1000
-row_numbers = c()
-column_numbers = c()
 
-matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
-matrix_complete = matrix
-
-set.seed(362436666)
-row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
-column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
-
-
-i = 1
-j = 1
-while (i <= round(size_test*2) & j <= size_test) {
-  if(!is.na(matrix[row_random[i],column_random[i]])){
-    row_numbers = c(row_numbers,row_random[i])
-    column_numbers = c(column_numbers,column_random[i])
-    matrix[row_random[i],column_random[i]] = NA
-    j = j + 1
+for(k in k_list){
+  for(randomSeed in 362136666:362136675){
+    set.seed(randomSeed)
+    
+    
+    row_numbers = c()
+    column_numbers = c()
+    
+    matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+    matrix_complete = matrix
+    
+    set.seed(randomSeed)
+    row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
+    column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+    
+    
+    i = 1
+    j = 1
+    while (i <= round(size_test*2) & j <= size_test) {
+      if(!is.na(matrix[row_random[i],column_random[i]])){
+        row_numbers = c(row_numbers,row_random[i])
+        column_numbers = c(column_numbers,column_random[i])
+        matrix[row_random[i],column_random[i]] = NA
+        j = j + 1
+      }
+      i = i + 1
+    }
+    
+    
+    expressionLevel_impute_knn = (impute.knn(matrix ,k = k, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+    
+    i = 1
+    se = 0
+    while (i < j) {
+      se = se + (as.double(matrix_complete[row_numbers[i],column_numbers[i]]) - as.double(expressionLevel_impute_knn[row_numbers[i],column_numbers[i]]))^2
+      i = i + 1
+    }
+    
+    k_value_validation_df = rbind(k_value_validation_df, c(k,se/j))
+    print(paste("k = ",k," mse = ",se/j))
   }
-  i = i + 1
 }
 
 
-expressionLevel_impute_knn = (impute.knn(matrix ,k = 20, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+colnames(k_value_validation_df) = c("k","mse")
+k_value_validation_df$k = as.integer(k_value_validation_df$k)
 
-i = 1
-se = 0
-while (i < j) {
-  se = se + (as.double(matrix_complete[row_numbers[i],column_numbers[i]]) - as.double(expressionLevel_impute_knn[row_numbers[i],column_numbers[i]]))^2
-  i = i + 1
-}
+k_value_validation_ds <- do.call(rbind, lapply(split(k_value_validation_df, k_value_validation_df$k), function(d) {
+  data.frame(mean = mean(d$mse), sd = sd(d$mse), k = d$k)
+}))
 
-print(paste("estimate mse = ",se/j))
+```
+
+```{r}
+ggplot() +
+  geom_point(data = k_value_validation_df, aes(k, mse)) +
+  geom_point(data = k_value_validation_ds, aes(k, mean), colour = 'red', size = 3) +
+  geom_line(data = k_value_validation_ds, aes(k,mean), size = 1, colours = 'blue') +
+  geom_errorbar(
+    data = k_value_validation_ds,
+    aes(k, mean, ymin = mean - sd, ymax = mean + sd),
+    colour = 'red',
+    width = 0.4
+  )+
+  theme(axis.text=element_text(size=16),axis.title=element_text(size=16,face="bold"))
 ```
 
 
+an optimal value for k should sits between 5 and 20. In this case, we pick k = 11 for our imputation
 ```{r echo=FALSE}
-expressionLevel_impute_knn = (impute.knn(as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)]) ,k = 20, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
+expressionLevel_impute_knn = (impute.knn(as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)]) ,k = 11, rowmax = 0.5, colmax = 0.8, maxp = 7000, rng.seed=362436069))$data
 
 expressionLevel_impute_knn = merge(expressionLevel_Gasch_filtered[1:3],expressionLevel_impute_knn, by = 0, sort = FALSE)
 expressionLevel_impute_knn$Row.names <- NULL
@@ -434,6 +438,88 @@ expressionLevel_impute_knn$Row.names <- NULL
 fullTable_Gasch_impute_knn <- merge(expressionLevel_impute_knn,ref_motifs,by = "geneName")
 ```
 
+
+
+### baseline performance: simply replace missing value with 0
+As one of the easiest way to deal with the missing values, we could simply replace them by 0
+```{r}
+fullTable_Gasch_na2zero = fullTable_Gasch
+fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
+```
+
+To estimate of the performance, we randomly knock out 0.1% of non-NA and check the mean square error.
+```{r}
+baseline_df = data.frame(matrix(ncol = 1, nrow = 0))
+
+for(randomSeed in 362136666:362136675){
+  size_test = 1000
+  row_numbers = c()
+  column_numbers = c()
+  
+  matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+  
+  set.seed(randomSeed)
+  row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
+  column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+  
+  i = 1
+  j = 1
+  while (i <= round(size_test*2) & j <= size_test) {
+    if(!is.na(matrix[row_random[i],column_random[i]])){
+      row_numbers = c(row_numbers,row_random[i])
+      column_numbers = c(column_numbers,column_random[i])
+      j = j + 1
+    }
+    i = i + 1
+  }
+  
+  
+  se = 0
+  for (i in 1:(j-1)) {
+    se = se + (as.double(matrix[row_numbers[i],column_numbers[i]]))^2
+  }
+  
+  baseline_df = rbind(baseline_df, c(se/j))
+  print(paste("estimate mse = ",se/j))
+  
+}
+
+colnames(baseline_df) = c("mse")
+
+```
+
+```{r}
+baseline_ds = data.frame(matrix(ncol = 2, nrow = 0))
+baseline_ds = rbind(baseline_ds, c(mean(baseline_df$mse),sd(baseline_df$mse)))
+colnames(baseline_ds) = c("mean","sd")
+
+```
+
+
+
+```{r}
+ggplot() +
+  geom_point(data = baseline_df, aes("NA to zero", mse)) +
+  geom_point(data = k_value_validation_df[k_value_validation_df$k == 11,], aes("kNN imputation (k=11)",mse)) +
+  geom_point(data = baseline_ds, aes("NA to zero", mean), colour = 'red', size = 3) +
+  geom_point(data = k_value_validation_ds[k_value_validation_ds$k == 11,], aes("kNN imputation (k=11)", mean), colour = 'red', size = 3) +
+  geom_errorbar(
+    data = baseline_ds,
+    aes("NA to zero", mean, ymin = mean - sd, ymax = mean + sd),
+    colour = 'red',
+    width = 0.2
+  ) + 
+  geom_errorbar(
+    data = k_value_validation_ds[k_value_validation_ds$k == 11,],
+    aes("kNN imputation (k=11)", mean, ymin = mean - sd, ymax = mean + sd),
+    colour = 'red',
+    width = 0.2
+  ) +
+  theme(axis.text=element_text(size=16),axis.title=element_text(size=16,face="bold")) +
+  labs(x = "")+
+  ylim(0,0.8)
+
+```
 
 
 # glmnet group lasso notes
@@ -492,8 +578,8 @@ when `alpha = 1` this is a group-lasso penalty, and otherwise it mixes with quad
 ***
 
 ```{r}
-x = as.matrix(fullTable_Gasch_na2zero[names_motifs_valid])
-y = as.matrix(fullTable_Gasch_na2zero[names_environmental_stress])
+x = as.matrix(fullTable_Gasch_impute_knn[names_motifs_valid])
+y = as.matrix(fullTable_Gasch_impute_knn[names_environmental_stress])
 
 cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 ```
@@ -507,7 +593,7 @@ plot(cv_models_all)
 ```
 
 ### training model with selected lambda
-training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
+training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients. However, we prefer λ = lambda.min since it provide us more non-zero coefficient
 ```{r}
 models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
 models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
@@ -516,53 +602,88 @@ paste("lambda.min =",cv_models_all$lambda.min)
 paste("lambda.1se =",cv_models_all$lambda.1se)
 ```
 
+
 ### the penalize effect with λ = lambda.1se is much stronger than that with λ = lambda.min
 We summary coefficients from all the models together to compare the penalized effect of models with different λ values. The model with λ = lambda.1se penalizes more than 90% of coefficients to 0 while the model with λ = lambda.min keep more than half of its coefficients non-zero.
+
+```{r echo=FALSE}
+summary_lambda_coefficient = data.frame(matrix(ncol = 3, nrow = 0))
+
+{
+  count_nonzero_coefficient = 0
+  for (condition in names_environmental_stress) {
+    count_nonzero_coefficient = count_nonzero_coefficient + models_all_minLambda$beta[[condition]]@p[2]
+  }
+  
+  count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
+}
+
+summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
+    lambda = "min",
+    coefficient = "non-zero",
+    percentage = count_nonzero_coefficient/count_all_coefficient
+  ))
+summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
+    lambda = "min",
+    coefficient = "zero",
+    percentage = (1 - count_nonzero_coefficient/count_all_coefficient)
+  ))
+
+
+{
+  count_nonzero_coefficient = 0
+  for (condition in names_environmental_stress) {
+    count_nonzero_coefficient = count_nonzero_coefficient + models_all_1seLambda$beta[[condition]]@p[2]
+  }
+  
+  count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
+}
+
+summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
+    lambda = "1se",
+    coefficient = "non-zero",
+    percentage = count_nonzero_coefficient/count_all_coefficient
+  ))
+summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
+    lambda = "1se",
+    coefficient = "zero",
+    percentage = (1 - count_nonzero_coefficient/count_all_coefficient)
+  ))
+```
+
+
+```{r}
+ggplot(data=summary_lambda_coefficient, aes(x=lambda, y=percentage, fill=coefficient), labdels = percentage) +
+  geom_bar(stat="identity", position=position_dodge())+
+  geom_text(aes(label=percentage), position=position_dodge(width=0.9), vjust=-0.25)+
+  scale_fill_brewer(palette="Paired")+
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title = element_text(size = 14))+
+  ylab("percentage of coefficient")
+  
+```
+
+
 ```{r echo=FALSE}
 coefficients = NULL
 for (condition in names_environmental_stress) {
   coefficients = c(coefficients,models_all_minLambda$beta[[condition]]@x)
 }
 
-hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.min')
-```
-
-```{r echo=FALSE}
-count_nonzero_coefficient = 0
-
-for (condition in names_environmental_stress) {
-  count_nonzero_coefficient = count_nonzero_coefficient + models_all_minLambda$beta[[condition]]@p[2]
-}
-
-count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
-
-paste("percentage of non-zero coefficient in models with λmin=", count_nonzero_coefficient/count_all_coefficient)
+hist(coefficients, breaks = c(-3,-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1,1.5), main = 'histgram of non-zero coefficient when λ = lambda.min')
 ```
 
 
 ```{r echo=FALSE}
 coefficients = NULL
-for (condition in names_condition) {
+for (condition in names_environmental_stress) {
   coefficients = c(coefficients,models_all_1seLambda$beta[[condition]]@x)
 }
 
 hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.1se')
 
 ```
-
-
-```{r echo=FALSE}
-count_nonzero_coefficient = 0
-
-for (condition in names_environmental_stress) {
-  count_nonzero_coefficient = count_nonzero_coefficient + models_all_1seLambda$beta[[condition]]@p[2]
-}
-
-count_all_coefficient = length(names_environmental_stress)*length(names_motifs_valid)
-
-paste("percentage of non-zero coefficient in models with λ1se =", count_nonzero_coefficient/count_all_coefficient)
-```
-
 
 ### regulatory effect of motifs decrease as time pass in heat shock
 Here we plot a graph to show how the coefficient given to each motif change across the timeline after heat shock. For most of the motifs, their coefficients increase with shortly delay and reach their peak at 15mins. Than they gradually shift to 0 as time past. An explanation of the 15mins delay is that the cis-regulatory elements could regulate the expression level by adjusting the stability of mRNA which may need some time to decay.
@@ -580,7 +701,7 @@ Here we plot a graph to show how the coefficient given to each motif change acro
 
 ```
 
-```{r fig.height=10, fig.width=12}
+```{r fig.height=7, fig.width=9}
 plot_models_line(models_all_minLambda, names_temperature_condition, 10)
 ```
 
@@ -605,11 +726,11 @@ Since we are interesting in investigating how motifs's regulatory effect change 
 coefficients = extract_coefficient(models_all_minLambda,c(names_sorbitol_condition,names_nosorbitol_condition))
 ```
 
-```{r fig.height=10, fig.width=12}
+```{r fig.height=7, fig.width=9}
 plot_models_line(models_all_minLambda, names_nosorbitol_condition, 10)
 ```
 
-```{r fig.height=10, fig.width=12}
+```{r fig.height=10, fig.width=9}
 plot_models_line(models_all_minLambda, names_sorbitol_condition, 10)
 ```
 
@@ -621,7 +742,8 @@ coefficients_TGAGGGCTA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
 ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) +
   geom_line(aes(colour=sorbitol))+
   labs(x = "after heat shock from 29C to 33C", y = "value")+
-  ggtitle("regression coefficient of TGAGGGCTA")
+  ggtitle("regression coefficient of TGAGGGCTA")+
+  theme(axis.text.x = element_text(size = 16), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
   
 ```
 
@@ -632,7 +754,8 @@ coefficients_UGUAHMNUA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
 ggplot(data = coefficients_UGUAHMNUA, aes(x=time_min,y=value,group = sorbitol)) +
   geom_line(aes(colour=sorbitol))+
   labs(x = "after heat shock from 29C to 33C", y = "value")+
-  ggtitle("regression coefficient of UGUAHMNUA")
+  ggtitle("regression coefficient of UGUAHMNUA")+
+  theme(axis.text.x = element_text(size = 16), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
 ```
 
 ```{r echo=FALSE}
@@ -642,7 +765,8 @@ coefficients_TGAGGGCTA$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
 ggplot(data = coefficients_TGAGGGCTA, aes(x=time_min,y=value,group = sorbitol)) +
   geom_line(aes(colour=sorbitol))+
   labs(x = "after heat shock from 29C to 33C", y = "value")+
-  ggtitle("regression coefficient of TGAGGGCTA")
+  ggtitle("regression coefficient of TGAGGGCTA")+
+  theme(axis.text.x = element_text(size = 16), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
 ```
 
 
@@ -653,13 +777,229 @@ coefficients_UKWCGRGGN$sorbitol = c(TRUE,TRUE,TRUE,FALSE,FALSE,FALSE)
 ggplot(data = coefficients_UKWCGRGGN, aes(x=time_min,y=value,group = sorbitol)) +
   geom_line(aes(colour=sorbitol))+
   labs(x = "after heat shock from 29C to 33C", y = "value")+
-  ggtitle("regression coefficient of UKWCGRGGN")
+  ggtitle("regression coefficient of UKWCGRGGN")+
+  theme(axis.text.x = element_text(size = 16), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
 ```
 
 
 
 
-# Analysis the Bias
+# L2 norm and sum of regression coefficient comparison
+With the models from group lasso, we can carefully select the regression coefficient from different groups of environmental conditions and compare them. By calculating the sum and L2 norm of their coefficient under each group of environmental condition, we are able to compare how the regulatory effect of each motif differ in each environmental stress. 
+
+```{r}
+{
+  names_heatshock_29to33_condition = vector(mode="character", length=3)
+  names_heatshock_29to33_condition[1] = "hs_29to33_05min"
+  names_heatshock_29to33_condition[2] = "hs_29to33_15min"
+  names_heatshock_29to33_condition[3] = "hs_29to33_30min"
+}
+
+{
+  names_heatshock_sorbital_condition = vector(mode="character", length=3)
+  names_heatshock_sorbital_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbital_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbital_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+} 
+
+{
+  names_hypothermia_condition = vector(mode="character", length=3)
+  names_hypothermia_condition[1] = "hs_37to25_15min"
+  names_hypothermia_condition[2] = "hs_37to25_30min"
+  names_hypothermia_condition[3] = "hs_37to25_60min"
+} 
+
+{
+  names_heatshock_25to37_condition = vector(mode="character", length=3)
+  names_heatshock_25to37_condition[1] = "hs_15min_hs-1"
+  names_heatshock_25to37_condition[2] = "hs_30min_hs-1"
+  names_heatshock_25to37_condition[3] = "hs_60min_hs-1"
+} 
+
+
+```
+
+
+
+```{r echo=FALSE}
+
+summary_coefficient = data.frame(matrix(ncol = 5, nrow = 0))
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_environmental_stress)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "all",
+    L0 = sum((coefficients_motif_specific) != 0),
+    sum = sum(coefficients_motif_specific),
+    L2 = sqrt(sum(coefficients_motif_specific^2))
+  ))
+}
+
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_29to33_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "heat shock from 29C to 33C",
+    L0 = sum((coefficients_motif_specific) != 0),
+    sum = sum(coefficients_motif_specific),
+    L2 = sqrt(sum(coefficients_motif_specific^2))
+  ))
+}
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_sorbital_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "heat shock with sorbitol",
+    L0 = sum((coefficients_motif_specific) != 0),
+    sum = sum(coefficients_motif_specific),
+    L2 = sqrt(sum(coefficients_motif_specific^2))
+  ))
+}
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_hypothermia_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "hypothermia from 37C to 25C",
+    L0 = sum((coefficients_motif_specific) != 0),
+    sum = sum(coefficients_motif_specific),
+    L2 = sqrt(sum(coefficients_motif_specific^2))
+  ))
+}
+
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_25to37_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "heat shock from 25C to 37C",
+    L0 = sum((coefficients_motif_specific) != 0),
+    sum = sum(coefficients_motif_specific),
+    L2 = sqrt(sum(coefficients_motif_specific^2))
+  ))
+}
+
+
+```
+
+
+
+### L2 norm of the non-zero regression coefficient from significant motif under all condition
+The following graph shows the L2 norm of the regression coefficient of some significant motif under all environmental conditions. The rank of each motif shows how significant a motif is in the environmental conditions we considered. However, since the models we fitted here only considered some typical environmental stress on yeast and is very unbalanced in the type of condition (about 40 model is temperature relevant), we couldn't say the high-rank motif shown here is significant under general environmental stress.
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "all",]
+summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
+
+
+ggplot(data=head(summary_coefficient_temp,31), aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("L2 of the non-zero regression coefficient from significant motif under all condition")
+```
+
+### compare L2 nore and sum of the non-zero regression coefficient from significant motif under heat shock and hypothermia
+the regulatory effect of each motif under hypothermia is much smaller than that under heat shock. This could probably reflect the trigger of environmental stress response (ESR) mention by Gasch et al. (2000): "the ESR is not initiated in response to all environmental changes and that the large, transient changes in expression that are characteristic of the ESR are only seen when this response is initiated and not in the reciprocal response to diminished environmental stress."
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
+summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+
+ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("L2 of the non-zero regression coefficient of significant motifs under heat shock and hypothermia after 15, 30 and 60 min")
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
+summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+
+
+ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("Sum of the non-zero regression coefficient of significant motifs under heat shock and hypothermia after 15, 30 and 60 min")
+```
+
+
+### compare L2 norm and sum of the non-zero regression coefficient from significant motif under heat shock, heat shock with sorbitol
+Although most of the regression coefficients are similar in both heat shock with and without sorbitol, there are some motifs show a relatively different regulatory effect on gene expression with sorbitol. Check the second graph `Sum of the non-zero regression coefficient of significant motifs under heat shock with and without sorbitol after 5, 15 and 30 min`, it is easy to see `TGAGGCTA` shows a much stronger regulatory effect on gene expression when there is sorbitol while `UKWCGRGGN` and `GTAGTATTT` acting in an opposite way, a much weaker regulatory effect under heat shock with sorbitol.
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+
+
+
+ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        title = element_text(size = 14)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("L2 of the non-zero regression coefficient of significant motifs under heat shock with and without sorbitol after 5, 15 and 30 min")
+```
+
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+
+
+ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("Sum of the non-zero regression coefficient of significant motifs under heat shock with and without sorbitol after 5, 15 and 30 min")
+```
+
+
+
+### Analysis the Bias
 The bias of each model shows the change of expression level that cannot be explained by these motifs
 here we calculate the percentage of it against the mean of change in expression level to estimate how much of the regulation effect cannot be expalined by the model. The estimation is base on many assumptions and could be very ambiguous. 
 
@@ -669,7 +1009,7 @@ $$
 
 
 ```{r} 
-models_all_minLambda$a0/colMeans(fullTable_Gasch_withNa[names_environmental_stress], na.rm = TRUE)
+models_all_minLambda$a0/colMeans(fullTable_Gasch[names_environmental_stress], na.rm = TRUE)
 ```
 
 
