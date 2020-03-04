@@ -134,14 +134,14 @@ plot_models_line <- function(models, conditions, lineNumber) {
     if((i+lineNumber)<= dim(coefficients)[1]){
       print(
       ggplot(data = melt(setDT(coefficients[i:(i+lineNumber-1)], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-        geom_line(aes(colour=rn))+
+        geom_line(aes(colour=rn), size = 1.2)+
         labs(x = "model", y = "regression coefficient") +
         theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1),axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
     }else{
       print(
       ggplot(data = melt(setDT(coefficients[i:dim(coefficients)[1]], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-        geom_line(aes(colour=rn))+
+        geom_line(aes(colour=rn), size = 1.2)+
         labs(x = "model", y = "regression coefficient") +
         theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
@@ -190,8 +190,10 @@ Load 69 published motifs (from Abhi's report) and 3'UTR sequences of 4388 differ
 
 #ref datasets for UTRs 
 UTR_raw <- read_rds("../data/Sun_mutation_UTRs.rds")
-  #Get sequences from UTR_raw in a separate vector
-  UTR_3 <- UTR_raw$UTR3_seq
+UTR_raw = rbind(UTR_raw,read_csv("../data/3UTR_fungiDB"),fill=TRUE)
+
+#Get sequences from UTR_raw in a separate vector
+UTR_3 <- UTR_raw$UTR3_seq
 
 #Load Manually created motifs list into a vector
 motifs_raw <- scan("../data/list_motifs.txt", character())
@@ -209,6 +211,7 @@ for (i in names(expressionLevel_Gasch)[3:176]) {
 
 ```
 
+
 ### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
 By converting all the motifs to regular expression, we are able to construct motifs frequency matrix which describes the frequency of 69 motifs among 4388 different genes.
 ```{r construct motif frequency, echo=FALSE}
@@ -225,10 +228,6 @@ for (i in 1:length(motifs)){
   ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
 }
 
-#Search and add frequency of each c(motif) as a column in ref dataset
-for (i in 1:length(motifs)){
-  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
-}
 
 names_motifs_all = names(ref_motifs)[2:length(ref_motifs)]
 names_environmental_stress = names(expressionLevel_Gasch)[4:length(expressionLevel_Gasch)]
@@ -361,7 +360,8 @@ k_list = c(2,5,8,11,14,17,20,23,27,30)
 size_test = 1000
 
 for(k in k_list){
-  for(randomSeed in 362136666:362136675){
+  #for(randomSeed in 362136666:362136675){
+  for(randomSeed in 362136666:362136667){
     set.seed(randomSeed)
     
     
@@ -440,32 +440,29 @@ fullTable_Gasch_impute_knn <- merge(expressionLevel_impute_knn,ref_motifs,by = "
 
 
 
-### baseline performance: simply replace missing value with 0
-As one of the easiest way to deal with the missing values, we could simply replace them by 0
-```{r}
-fullTable_Gasch_na2zero = fullTable_Gasch
-fullTable_Gasch_na2zero[is.na(fullTable_Gasch_na2zero)] <- 0.0
-```
-
+### baseline performance: simply replace missing value with mean of column
+As one of the easiest approach to deal with the missing values, we could simply replace them by mean of that column
 To estimate of the performance, we randomly knock out 0.1% of non-NA and check the mean square error.
 ```{r}
 baseline_df = data.frame(matrix(ncol = 1, nrow = 0))
+expressionLevel_matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+storage.mode(expressionLevel_matrix) <- "double"
+expressionLevel_column_mean = colMeans(expressionLevel_matrix,na.rm = TRUE)
 
 for(randomSeed in 362136666:362136675){
   size_test = 1000
   row_numbers = c()
   column_numbers = c()
   
-  matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
   
   set.seed(randomSeed)
-  row_random = sample(1:dim(matrix)[1],size_test*2,replace = TRUE)
-  column_random = sample(1:dim(matrix)[2],size_test*2,replace = TRUE)
+  row_random = sample(1:dim(expressionLevel_matrix)[1],size_test*2,replace = TRUE)
+  column_random = sample(1:dim(expressionLevel_matrix)[2],size_test*2,replace = TRUE)
   
   i = 1
   j = 1
   while (i <= round(size_test*2) & j <= size_test) {
-    if(!is.na(matrix[row_random[i],column_random[i]])){
+    if(!is.na(expressionLevel_matrix[row_random[i],column_random[i]])){
       row_numbers = c(row_numbers,row_random[i])
       column_numbers = c(column_numbers,column_random[i])
       j = j + 1
@@ -476,7 +473,7 @@ for(randomSeed in 362136666:362136675){
   
   se = 0
   for (i in 1:(j-1)) {
-    se = se + (as.double(matrix[row_numbers[i],column_numbers[i]]))^2
+    se = se + (expressionLevel_matrix[row_numbers[i],column_numbers[i]] - expressionLevel_column_mean[column_numbers[i]])^2
   }
   
   baseline_df = rbind(baseline_df, c(se/j))
@@ -487,6 +484,8 @@ for(randomSeed in 362136666:362136675){
 colnames(baseline_df) = c("mse")
 
 ```
+
+
 
 ```{r}
 baseline_ds = data.frame(matrix(ncol = 2, nrow = 0))
@@ -499,13 +498,13 @@ colnames(baseline_ds) = c("mean","sd")
 
 ```{r}
 ggplot() +
-  geom_point(data = baseline_df, aes("NA to zero", mse)) +
+  geom_point(data = baseline_df, aes("NA to column mean", mse)) +
   geom_point(data = k_value_validation_df[k_value_validation_df$k == 11,], aes("kNN imputation (k=11)",mse)) +
-  geom_point(data = baseline_ds, aes("NA to zero", mean), colour = 'red', size = 3) +
+  geom_point(data = baseline_ds, aes("NA to column mean", mean), colour = 'red', size = 3) +
   geom_point(data = k_value_validation_ds[k_value_validation_ds$k == 11,], aes("kNN imputation (k=11)", mean), colour = 'red', size = 3) +
   geom_errorbar(
     data = baseline_ds,
-    aes("NA to zero", mean, ymin = mean - sd, ymax = mean + sd),
+    aes("NA to column mean", mean, ymin = mean - sd, ymax = mean + sd),
     colour = 'red',
     width = 0.2
   ) + 
@@ -594,6 +593,9 @@ plot(cv_models_all)
 
 ### training model with selected lambda
 training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients. However, we prefer λ = lambda.min since it provide us more non-zero coefficient
+
+"lambda.min = 0.108274493279888"
+"lambda.1se = 0.695996358333947"
 ```{r}
 models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
 models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
@@ -621,12 +623,12 @@ summary_lambda_coefficient = data.frame(matrix(ncol = 3, nrow = 0))
 summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
     lambda = "min",
     coefficient = "non-zero",
-    percentage = count_nonzero_coefficient/count_all_coefficient
+    percentage = round(count_nonzero_coefficient/count_all_coefficient,2)
   ))
 summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
     lambda = "min",
     coefficient = "zero",
-    percentage = (1 - count_nonzero_coefficient/count_all_coefficient)
+    percentage = (1 - round(count_nonzero_coefficient/count_all_coefficient,2))
   ))
 
 
@@ -642,12 +644,12 @@ summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
 summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
     lambda = "1se",
     coefficient = "non-zero",
-    percentage = count_nonzero_coefficient/count_all_coefficient
+    percentage = round(count_nonzero_coefficient/count_all_coefficient,2)
   ))
 summary_lambda_coefficient = rbind(summary_lambda_coefficient, data.frame(
     lambda = "1se",
     coefficient = "zero",
-    percentage = (1 - count_nonzero_coefficient/count_all_coefficient)
+    percentage = (1 - round(count_nonzero_coefficient/count_all_coefficient,2))
   ))
 ```
 
@@ -825,7 +827,6 @@ With the models from group lasso, we can carefully select the regression coeffic
 
 summary_coefficient = data.frame(matrix(ncol = 5, nrow = 0))
 
-
 coefficients = extract_coefficient(models_all_minLambda,names_environmental_stress)
 
 for(motif in names_motifs_valid){
@@ -833,7 +834,7 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "all",
-    L0 = sum((coefficients_motif_specific) != 0),
+    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -849,7 +850,7 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "heat shock from 29C to 33C",
-    L0 = sum((coefficients_motif_specific) != 0),
+    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -863,7 +864,7 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "heat shock with sorbitol",
-    L0 = sum((coefficients_motif_specific) != 0),
+    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -877,7 +878,7 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "hypothermia from 37C to 25C",
-    L0 = sum((coefficients_motif_specific) != 0),
+    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -893,14 +894,14 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "heat shock from 25C to 37C",
-    L0 = sum((coefficients_motif_specific) != 0),
+    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
 }
 
-
 ```
+
 
 
 
@@ -928,7 +929,8 @@ the regulatory effect of each motif under hypothermia is much smaller than that 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
 summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
 summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
+
 
 ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
@@ -943,7 +945,7 @@ ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condi
 ```{r echo=FALSE, fig.height=8, fig.width=14}
 summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
 summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
 
 
 ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
@@ -964,7 +966,7 @@ Although most of the regression coefficients are similar in both heat shock with
 ```{r echo=FALSE, fig.height=8, fig.width=14}
 summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
 summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
 
 
 
@@ -984,10 +986,10 @@ ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condi
 ```{r echo=FALSE, fig.height=8, fig.width=14}
 summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
 summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% unique(head(summary_coefficient_temp,30)$motif),]
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=, fill=condition)) +
+ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
@@ -999,85 +1001,133 @@ ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=, fill=conditi
 
 
 
-### Analysis the Bias
-The bias of each model shows the change of expression level that cannot be explained by these motifs
-here we calculate the percentage of it against the mean of change in expression level to estimate how much of the regulation effect cannot be expalined by the model. The estimation is base on many assumptions and could be very ambiguous. 
+### investigate the frequency of significant motif
 
-$$
-bias\over mean( expression\ level)
-$$
-
-
-```{r} 
-models_all_minLambda$a0/colMeans(fullTable_Gasch[names_environmental_stress], na.rm = TRUE)
+```{r}
+order_motifs = summary_coefficient[summary_coefficient$condition == "all",]
+order_motifs = order_motifs[order(-order_motifs$transcriptAmount),]$motif
 ```
 
 
-### compare coefficient under oopposite environmental stress
-```{r echo=FALSE, fig.height=10, fig.width=12}
-{
-  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
-  plot_points(models_all_minLambda$beta$`hs_15min_hs-1`,'red')
-  plot_points(models_all_minLambda$beta$`hs_37to25_15min`,'blue')
-  legend('bottomleft', legend=c('heat shock','cool down'), col=c('red','blue'), lty = 1)
-}
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "all",]
+summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(order_motifs,31),]
 
-{
-  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
-  plot_line(models_all_minLambda$beta$`hs_15min_hs-1`,'red')
-  plot_line(models_all_minLambda$beta$`hs_37to25_15min`,'blue')
-  legend('bottomleft', legend=c('heat shock','cool down'), col=c('red','blue'), lty = 1)
-}
 
+ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+  geom_bar(stat="identity", aes(y=L2,fill = condition)) +
+  geom_line(aes(y = transcriptAmount*3, colour = "log10 transcript frequency"),group=1, size=2) +
+  geom_text(aes(y = transcriptAmount*3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,10.5)+
+  ggtitle("frequency vs L2 of each motif under all condition")
 ```
 
 
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "all",]
+summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% tail(order_motifs,31),]
 
-### compare coefficient of heat shock with and without sorbital - 5min
-check if the `additional effect` mension by Gasch is shown in the models. The effect is obvious at first and decrease in 30 mins
-```{r echo=FALSE, fig.height=10, fig.width=12}
 
-{
-  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
-  plot_line(models_all_minLambda$beta$`hs_29to33_05min`,'red')
-  plot_line(models_all_minLambda$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_05min`,'blue')
-  plot_line(models_all_minLambda$beta$`1M_sorbitol_05min`,'forestgreen')
-  legend('bottomleft', legend=c('hs with sorbitol','hs without sorbitol','sorbitol without hs'), col=c('red','blue','forestgreen'), lty = 1)
-}
+ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+  geom_bar(stat="identity", aes(y=L2,fill = condition)) +
+  geom_line(aes(y = transcriptAmount*3, colour = "log10 transcript frequency"),group=1, size=2) +
+  geom_text(aes(y = transcriptAmount*3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,10.5)+
+  ggtitle("frequency vs L2 of each motif under all condition")
 ```
 
 
-
-### compare coefficient of heat shock with and without sorbital - 15min
-```{r echo=FALSE, fig.height=10, fig.width=12}
-
-{
-  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
-  plot_line(models_all_minLambda$beta$`hs_29to33_15min`,'red')
-  plot_line(models_all_minLambda$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`,'blue')
-  plot_line(models_all_minLambda$beta$`1M_sorbitol_15min`,'forestgreen')
-  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
-}
-```
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(order_motifs,31),]
 
 
-### compare coefficient of heat shock with and without sorbital - 30min
-```{r echo=FALSE, fig.height=10, fig.width=12}
-
-{
-  plot_labels(names_motifs_valid, range_coe(models_all_minLambda$beta))
-  plot_line(models_all_minLambda$beta$`hs_29to33_30min`,'red')
-  plot_line(models_all_minLambda$beta$`29C(1M_sorbitol)~33C(1M_sorbitol)_30min`,'blue')
-  plot_line(models_all_minLambda$beta$`1M_sorbitol_30min`,'forestgreen')
-  legend('bottomleft', legend=c('hs','sorbitol','hs + sorbitol'), col=c('red','forestgreen','blue'), lty = 1)
-}
+ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+  geom_bar(stat="identity", position=position_dodge(), aes(y=L2,fill = condition)) +
+  geom_line(aes(y = transcriptAmount/3, colour = "log10 transcript frequency"),group=1, size=2) +
+  geom_text(aes(y = transcriptAmount/3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,1.2)+
+  ggtitle("frequency vs L2 of each motif under heat shock with and without sorbitol")
 ```
 
 
 
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
+summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% tail(order_motifs,31),]
 
-markdown report: what learning from existing motifs
-explain what the model tell us about these motifs
-fitting model - use the model as the central part, indicate how to improve and learning from it
-feature selection: which motifs make effort
+
+ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+  geom_bar(stat="identity", position=position_dodge(), aes(y=L2,fill = condition)) +
+  geom_line(aes(y = transcriptAmount/3, colour = "log10 transcript frequency"),group=1, size=2) +
+  geom_text(aes(y = transcriptAmount/3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,1.2)+
+  ggtitle("frequency vs L2 of each motif under all condition")
+```
+
+
+
+
+
+
+### investigate the proteins coding by the significant 
+
+```{r}
+fullTable_Gasch[fullTable_Gasch$UKWCGRGGN == 1,]
+```
+
+pick: YBR297W
+
+```{r}
+UTR_raw[UTR_raw$genename == "YBR297W",]$UTR3_seq
+UTR_raw[UTR_raw$genename == "YBR297W",]$UTR3_start
+```
+UKWCGRGGN
+TTTATTGTTCACGCCGTTCACTTATACGAGATAGATATACTGATAGAGTGTGAGTGATATTCTTAAGTCTTGCTTTTCGAGGGTGTAAGAAGCTATGTTCTTCAGGCGAGATTATTCTACTCCTGCCTTACTTGTTTGTAATATTTAGTTCTGATGGTCATGATAATTCTATATACAGTTACATTAAGTATATACTTAAGCGGGCAGCTTACTAATATAAATTTTGTGGCATTTTTGTTGGG
+
+"U" = "T", 
+"W" = "(A|T)", 
+"S" = "(C|G)", 
+"M" = "(A|C)", 
+"K" = "(G|T)", 
+"R" = "(A|G)", 
+"Y" = "(C|T)", 
+"B" = "(C|G|T)", 
+"D" = "(A|G|T)", 
+"H" = "(A|C|T)", 
+"V" = "(A|C|G)", 
+"N" = "(A|C|G|T)"))
+
+```{r}
+801930+nchar("TTTATTGTTCACGCCGTTCACTTATACGAGATAGATATACTGATAGAGTGTGAGTGATATTCTTAAGTCTTGCT")
+```
+
 

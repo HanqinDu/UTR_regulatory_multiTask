@@ -1,0 +1,228 @@
+---
+title: "data_prepare_3UTR_fungiDB"
+author: "Hanqin Du"
+date: "2020/2/27"
+output: html_document
+---
+
+
+```{r set work space for r, eval=FALSE, echo=FALSE}
+par(mfrow=c(1,1))
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+getwd()
+```
+
+
+### Load library
+```{r load library, results='hide', message=FALSE}
+library(data.table)
+library(tidyverse)
+```
+
+
+# prepare data from fungiDB
+
+### Load data
+```{r}
+# load Gasch's data
+expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt", locale = locale(decimal = ","))
+
+#ref datasets for UTRs 
+UTR_all <- read_rds("../data/Sun_mutation_UTRs.rds")
+  
+```
+
+### construct retrieve list for fungiDB
+```{r}
+gene_sequence_required = setdiff(expressionLevel_Gasch$geneName,UTR_all$genename)
+write(gene_sequence_required, "../data/gene_3UTR_required.txt")
+```
+
+### convert retrieve result from fungiDB to table
+```{r}
+file_download <- read.delim("../data/gene_3UTR_fungiDB")
+length_file = dim(file_download)[1]
+table_3UTR = data.frame(matrix(ncol = 2, nrow = 0))
+
+i = 1
+while(i < length_file){
+  table_3UTR = rbind(table_3UTR, data.frame(genename = file_download[i,1], "UTR3_seq" = file_download[i+1,1]))
+  i = i+2
+}
+
+table_3UTR$genename = sub(">","",table_3UTR$gene)
+
+```
+
+
+### write table as file
+```{r}
+write.csv(table_3UTR, "../data/3UTR_fungiDB", append = FALSE, sep = " ", dec = ".", row.names = FALSE, col.names = TRUE)
+```
+
+
+
+
+
+# investigate new UTR sequence data
+
+
+### Load Data
+***
+Load 69 published motifs (from Abhi's report) and 3'UTR sequences of 4388 different genes. Then, Load Gasch's gene-expression-level data which describes the relative gene expression level under 173 different environment conditions among 6152 genes.
+
+```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
+
+#ref datasets for UTRs 
+UTR_cheng <- read_rds("../data/Sun_mutation_UTRs.rds")
+UTR_fungiDB = read_csv("../data/3UTR_fungiDB")
+UTR_all = rbind(UTR_cheng,UTR_fungiDB,fill=TRUE)
+
+#Get sequences from UTR_all in a separate vector
+UTR_3 <- UTR_all$UTR3_seq
+
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("../data/list_motifs.txt", character())
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+
+```
+
+
+### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+By converting all the motifs to regular expression, we are able to construct motifs frequency matrix which describes the frequency of 69 motifs among 4388 different genes.
+```{r construct motif frequency, echo=FALSE}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs <- tibble(geneName = UTR_all$genename)
+
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+# load Gasch's data
+expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt", 
+                       locale = locale(decimal = ","))
+
+# convert all the expression data to number
+for (i in names(expressionLevel_Gasch)[3:176]) {
+  expressionLevel_Gasch[[i]] <- as.factor(as.character(expressionLevel_Gasch[[i]]))
+}
+
+
+names_motifs_all = names(ref_motifs)[2:length(ref_motifs)]
+names_gene_cheng = UTR_cheng$genename
+names_gene_fungiDB = UTR_fungiDB$genename
+```
+
+
+### check the mean length of 3'UTR in Cheng's data
+```{r}
+mean(UTR_all$UTR3_length,na.rm = TRUE)
+```
+
+
+### Merge motif frequency matrix with Gasch's data
+```{r}
+fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
+```
+
+### check the distribution of motif from two dataset "cheng" and "fungiDB"
+```{r}
+
+fullTable_Gasch_original = fullTable_Gasch[fullTable_Gasch$geneName %in% names_gene_cheng,]
+fullTable_Gasch_fungiDB = fullTable_Gasch[fullTable_Gasch$geneName %in% names_gene_fungiDB,]
+
+
+summary_motif_frequency = data.frame(matrix(ncol = 3, nrow = 0))
+
+for(m in names_motifs_all){
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = m,
+    dataset = "Cheng",
+    frequency = sum(fullTable_Gasch_original[[m]]),
+    frequency_per_gene = sum(fullTable_Gasch_original[[m]])/(dim(fullTable_Gasch_original)[1])
+  ))
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = m,
+    dataset = "fungiDB",
+    frequency = sum(fullTable_Gasch_fungiDB[[m]]),
+    frequency_per_gene = sum(fullTable_Gasch_fungiDB[[m]])/(dim(fullTable_Gasch_fungiDB)[1])
+  ))
+}
+
+
+```
+
+### plot distribution
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency),]
+
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% head(unique(summary_motif_frequency$motif),35),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency), y=frequency, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,1500)+
+  ggtitle("frequency of each motif according to the dataset from Cheng's study and fungiDB")
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency),]
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% tail(unique(summary_motif_frequency$motif),34),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency), y=frequency, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,1500)+
+  ggtitle("frequency of each motif according to the dataset from Cheng's study and fungiDB")
+```
+
+
+### plot the frequency per gene
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency_per_gene),]
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% head(unique(summary_motif_frequency$motif),35),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gene), y=frequency_per_gene, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.35)+
+  ggtitle("frequency of each motif per gene according to the dataset from Cheng's study and fungiDB")
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency_per_gene),]
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% tail(unique(summary_motif_frequency$motif),34),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gene), y=frequency_per_gene, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.35)+
+  ggtitle("frequency of each motif per gene according to the dataset from Cheng's study and fungiDB")
+```
+
+
