@@ -10,19 +10,22 @@ output: html_document
 # set work space for Rstudio
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ```
+# recent progress (2020/03/04 ~ 2020/03/10)
+We [apply downstream sequence with fix-length](#applySamuel) (120 nucleotides) from Samuel as 3'UTR to reduce the loss of the expression level data of 548 genes which is not present in both Cheng's and fungiDB datasets. 503 downstream sequences are applied (3'UTR of 45 genes are not present in all three of the dataset).
 
-# recent progress (2020/02/26 ~ 2020/03/03)
+To virtualize the data and compare the coefficient across different type of models, we plotted [box graph](#boxPlot) which has coefficient as y-axis and motif as x-axis where each data point come from one coefficient of a model and colored by its group (e.g. heat shock group, hypothermia group).
+
+[As another approach from comparing the motifs' regulatory effect between different types of environmental stresses, we compare the absolute value of their regression coefficients](#motifRank). Motifs are ranked in each model where rank 1 is given to the motifs with the highest absolute value of coefficient. Then, for each group of environmental stress, we compute the average rank of each motif weighted by L2 of the coefficients in each model. Therefore, the rank from a model with motifs with low regression coefficients will get less weight rather than that of a model with motifs with high regression coefficients.
+
+At last, we [compare the model's bias with the mean of Log2 expression level](#bias). The bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and could indicate the estimated proportion of the efforts on regulation these cis-regulatory elements make.
+
+
+# previous progress (2020/02/26 ~ 2020/03/03)
 followed a suggestion from the group meeting, I replace the baseline of imputation for missing value from "replace missing value by zero" to "[replace missing value by mean of column](#imputationBaseline)". As a result, there is not an obvious difference between the performance of these two baseline approaches.
 
 we downloaded downstream sequence with fix-length (120 nucleotides) as 3'UTR to reduce loss of the expression level data of 1868 genes causing by inner joining the expression level of 6152 genes with the 4388 motif frequency data. 1320 downstream sequences are downloaded from fungiDB. These downloaded sequences are modified and saved as file `3UTR_fungiDB` under the `data` folder. The length of 120 nucleotides is a sensible number just below the median length (suggested by Edward Wallace). As a comparison, we also [calculated the mean and median](#applyFungiDB) of the 3'UTR length from Cheng et al.'s data, which is 144 and 119 respectively. Finally, we plot a bar [graph to compare the frequency of the motif](#fungiDBMotifFrequency) between Cheng's and fungiDB's dataset. Since the frequency of most motifs is quite similar in both datasets, we believe the data from fungiDB is reliable enough to be applied.
 
 Furthermore, we [compare the amount of transcript include each motif and the coefficient of it](#frequencyCoefficient). The log10 transcript frequency is plotted. The regression coefficient of motifs with a low frequency could be unreliable even it is given a significant value.
-
-
-# previous progress (2020/02/19 ~ 2020/02/25)
-This week, we [validated the performance of kNN](#imputation) with a range of values of k by randomly knocking out 0.1% of non-NA values, filling by imputation and computing the mean square error. According to the validation, k = 11 provides the best performance with estimate mean square error = 0.1840177 which is similar to that of k = 8. We considered k = 11 as a more conserved chosen for the hyperparameter for kNN imputation.
-
-To compare the coefficient between models, we calculated and [compare the L2 norm of all the non-zero coefficient](#L2Allcondition) of each significant motif. Then we [divide some models into small groups](#environmentalGroup) and calculate the L2 norm and summing of motifs' coefficients in each group. As a simple attempt, we compare the L2 norm and summing of coefficients from [(1)](#heatShockHypothermia) the group "heat shock from 25C to 37C" and group "hypothermia from 37C to 25C"; [(2)](#heatShocksorbitol) the group "heat shock from 29C to 33C" and group "heat shock with sorbitol from 29C to 33C". To keep the consistency and comparability of the selection models, for the first two groups, only three models predict gene expression 15, 30 and 60 mins after the environmental stress are considered. For the other two groups, only three models predict gene expression 5, 15 and 30 mins after the environmental stress are considered.
 
 
 # project discription
@@ -39,6 +42,7 @@ In this project, we are interested in using these cis-regulatory features to pre
   - [Construct the design matrix](#constructDesignMatrix)
   - [1868 gene expression level data loss after inner join above data by gene name](#geneLoss)
   - [apply fix-length downstream sequence from fungiDB as 3'UTR for 1320 of the 1868 genes](#applyFungiDB)
+  - [apply fix-length downstream sequence from Samuel as 3'UTR for 503 of the 548 genes](#applySamuel)
   - [check the motif frequency from both dataset "cheng" and "fungiDB"](#fungiDBMotifFrequency)
   - [8 motifs are removed from list considering their low frequency on 3’UTR](#removeLowFrequencyMotifs)
   
@@ -70,6 +74,9 @@ In this project, we are interested in using these cis-regulatory features to pre
     - [under heat shock and hypothermia](#heatShockHypothermia)
     - [under heat shock with and without sorbitol](#heatShocksorbitol)
     - [investigate the transcript frequency of each motif against their coefficient](#frequencyCoefficient)
+  - [box graph for cross comparison between two type of environmental stress](#boxPlot)
+  - [comparison motifs rank between each group of models](#motifRank)
+  - [investigating bias and expression mean of each model](#bias)
 
 
 
@@ -249,11 +256,11 @@ first, we check the mean length of 3'UTR from Cheng et al.
 print(paste("median length of 3'UTR from Cheng et al. = ", median(UTR_cheng$UTR3_length,na.rm = TRUE)))
 print(paste("mean length of 3'UTR from Cheng et al. = ", mean(UTR_cheng$UTR3_length,na.rm = TRUE)))
 ```
-/
+
 Since there is no 3'UTR annotation in most of the reliable online database, we download downstream sequence with fix-length (120 nucleotides) as 3'UTR. 1320 downstream sequence are downloaded. The length of 120 nucleotides is suggested by my supervisor Edward Wallance as a sensible number just below the median length.
 ```{r warning=FALSE}
 UTR_fungiDB = read_csv("../data/3UTR_fungiDB")
-UTR_all = rbind(UTR_cheng,UTR_fungiDB,fill=TRUE)
+UTR_Cheng_fungiDB = rbind(UTR_cheng,UTR_fungiDB,fill=TRUE)
 
 names_gene_cheng = UTR_cheng$genename
 names_gene_fungiDB = UTR_fungiDB$genename
@@ -263,10 +270,10 @@ names_gene_fungiDB = UTR_fungiDB$genename
 ### Construct the design matrix with additional data from fungiDB
 ```{r}
 # get UTR sequence from both dataset
-UTR_3 <- UTR_all$UTR3_seq
+UTR_3 <- UTR_Cheng_fungiDB$UTR3_seq
 
 # Search and add frequency of each c(motif) as a column in ref dataset
-ref_motifs <- tibble(geneName = UTR_all$genename)
+ref_motifs <- tibble(geneName = UTR_Cheng_fungiDB$genename)
 for (i in 1:length(motifs)){
   ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
 }
@@ -340,6 +347,37 @@ ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gen
   scale_x_discrete(name ="Motif") + 
   ylim(0,0.35)+
   ggtitle("frequency of each motif per gene according to the dataset from Cheng's study and fungiDB")
+```
+
+
+### <a id="applySamuel"> Construct the design matrix with additional data from Samuel </a>
+
+```{r}
+UTR_Samuel <- read.csv(file="../data/genome_wide_120nt_3UTR_sequence.csv")
+colnames(UTR_Samuel) = c("genename","UTR3_seq")
+
+UTR_Cheng_fungiDB_Samuel = rbind(UTR_Cheng_fungiDB,UTR_Samuel,fill=TRUE)
+```
+
+```{r}
+# get UTR sequence from both dataset
+UTR_3 <- UTR_Cheng_fungiDB_Samuel$UTR3_seq
+
+# Search and add frequency of each c(motif) as a column in ref dataset
+ref_motifs <- tibble(geneName = UTR_Cheng_fungiDB_Samuel$genename)
+for (i in 1:length(motifs)){
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+
+# merge motifs
+fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
+
+# convert type of motifs frequency to factor for violin plotting
+fullTable_Gasch_factor = fullTable_Gasch
+for(i in names_motifs_all){
+    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
+}
 ```
 
 
@@ -674,7 +712,7 @@ Applying imputation to estimate the missing values should be a much better way r
 According to their article, when we consider gene A that has one missing value under environmental stress X, we could look for how the expression level of gene A change in other environmental stress Y and looking for k other genes B that show similar behavior as gene A. Then we fill the missing value by the weighted average of genes B. The contribution of each gene is weighted by similarity of its expression to that of gene A. 
 
 we can estimate the performance of imputation by randomly knocking out 0.1% of non-NA and check the mean square error between estimation and actual value.
-```{r include=FALSE}
+```{r eval=FALSE}
 
 k_value_validation_df = data.frame(matrix(ncol = 2, nrow = 0))
 
@@ -734,7 +772,7 @@ k_value_validation_ds <- do.call(rbind, lapply(split(k_value_validation_df, k_va
 
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE, eval=FALSE}
 ggplot() +
   geom_point(data = k_value_validation_df, aes(k, mse)) +
   geom_point(data = k_value_validation_ds, aes(k, mean), colour = 'red', size = 3) +
@@ -816,7 +854,7 @@ colnames(baseline_ds) = c("mean","sd")
 
 
 
-```{r}
+```{r eval=FALSE}
 ggplot() +
   geom_point(data = baseline_df, aes("NA to column mean", mse)) +
   geom_point(data = k_value_validation_df[k_value_validation_df$k == 11,], aes("kNN imputation (k=11)",mse)) +
@@ -861,23 +899,30 @@ We need to set the hyperparameter lambda to control the effect of penalization. 
 ```{r echo=FALSE}
 x = as.matrix(fullTable_Gasch_impute_knn[names_motifs_valid])
 y = as.matrix(fullTable_Gasch_impute_knn[names_environmental_stress])
-
-cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 ```
 
-```{r}
+```{r eval=FALSE}
+cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 plot(cv_models_all)
 ```
+
 `lambda.min` is the value of lambda that gives minimum cvm; `lambda.1se` is the largest value of lambda such that error is within 1 standard error of the minimum; The confidence intervals represent error estimates for the loss metric (red dots). They're computed using cross validation. The vertical dashed lines show the locations of λmin and λ1se. The numbers across the top are the number of nonzero coefficient estimates. The error is accumulated, and the average error and standard deviation over the folds is computed. 
 
 ### <a id="trainingModels"> training model with selected lambda </a>
 training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
 ```{r}
-models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
-models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
+# to skip cross validation
+lambda.min = 0.108274493279888
+lambda.1se = 0.695996358333947
 
-paste("lambda.min =",cv_models_all$lambda.min)
-paste("lambda.1se =",cv_models_all$lambda.1se)
+models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = lambda.min)
+models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = lambda.1se)
+
+#models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
+#models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
+
+#paste("lambda.min =",cv_models_all$lambda.min)
+#paste("lambda.1se =",cv_models_all$lambda.1se)
 ```
 
 
@@ -948,7 +993,7 @@ for (condition in names_environmental_stress) {
   coefficients = c(coefficients,models_all_minLambda$beta[[condition]]@x)
 }
 
-hist(coefficients, breaks = c(-3,-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1,1.5), main = 'histgram of non-zero coefficient when λ = lambda.min')
+hist(coefficients, main = 'histgram of non-zero coefficient when λ = lambda.min')
 ```
 
 
@@ -958,7 +1003,7 @@ for (condition in names_environmental_stress) {
   coefficients = c(coefficients,models_all_1seLambda$beta[[condition]]@x)
 }
 
-hist(coefficients, breaks = c(-2.5,-2,-1.5,-1,-0.5,-0.2,-0.1, -0.05,0,0.05,0.1,0.2,0.5,1), main = 'histgram of non-zero coefficient when λ = lambda.1se')
+hist(coefficients, main = 'histgram of non-zero coefficient when λ = lambda.1se')
 
 ```
 
@@ -1027,10 +1072,9 @@ With the models from group lasso, we can carefully select the regression coeffic
 
 
 
-
 ```{r echo=FALSE}
 
-summary_coefficient = data.frame(matrix(ncol = 5, nrow = 0))
+summary_coefficient = data.frame(matrix(ncol = 4, nrow = 0))
 
 coefficients = extract_coefficient(models_all_minLambda,names_environmental_stress)
 
@@ -1039,7 +1083,6 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "all",
-    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -1055,7 +1098,6 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "heat shock from 29C to 33C",
-    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -1069,7 +1111,6 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "heat shock with sorbitol",
-    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -1083,7 +1124,6 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "hypothermia from 37C to 25C",
-    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
@@ -1099,13 +1139,29 @@ for(motif in names_motifs_valid){
   summary_coefficient = rbind(summary_coefficient, data.frame(
     motif = motif,
     condition = "heat shock from 25C to 37C",
-    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0)),
     sum = sum(coefficients_motif_specific),
     L2 = sqrt(sum(coefficients_motif_specific^2))
   ))
 }
 
 ```
+
+```{r}
+summary_motif_frequency = data.frame(matrix(ncol= 2, nrow = 0))
+
+for(motif in names_motifs_valid){
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = motif,
+    transcriptAmount = log10(sum(fullTable_Gasch[[motif]] > 0))
+  ))
+}
+
+```
+
+```{r}
+summary_coefficient = merge(x = summary_coefficient, y = summary_motif_frequency, by = "motif")
+```
+
 
 
 ### <a id = "L2Allcondition"> L2 norm of the non-zero regression coefficient from significant motif under all condition </a>
@@ -1298,6 +1354,615 @@ ggplot(data=summary_coefficient_temp, aes(x=motif)) +
   ylim(0,1.2)+
   ggtitle("frequency vs L2 of each motif under all condition")
 ```
+
+
+
+
+### <a id="boxPlot"> box graph for cross comparison between two type of environmental stress </a>
+To compare how the coefficient of motif from two different type of environmental stress, we plot a box graph show the difference between the coefficients from two group of models.
+```{r}
+{
+  names_heatshock_29to33_condition = vector(mode="character", length=3)
+  names_heatshock_29to33_condition[1] = "hs_29to33_05min"
+  names_heatshock_29to33_condition[2] = "hs_29to33_15min"
+  names_heatshock_29to33_condition[3] = "hs_29to33_30min"
+}
+
+{
+  names_heatshock_sorbital_condition = vector(mode="character", length=3)
+  names_heatshock_sorbital_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbital_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbital_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+} 
+
+```
+
+
+```{r echo=FALSE}
+temp_coefficients_1 = extract_coefficient(models_all_minLambda, names_heatshock_29to33_condition)
+temp_coefficients_1$condition = rep("heat shock without sorbitol",nrow(temp_coefficients_1))
+
+temp_coefficients_2 = extract_coefficient(models_all_minLambda, names_heatshock_sorbital_condition)
+temp_coefficients_2$condition = rep("heat shock with sorbitol",nrow(temp_coefficients_2))
+
+coefficients = rbind(temp_coefficients_1,temp_coefficients_2)
+colnames(coefficients) = c("motif","variable","coefficient","condition")
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+coefficients$motif = factor(coefficients$motif, levels = order_motifs)
+
+ggplot(data=coefficients[coefficients$motif %in% head(order_motifs,31)], aes(x=motif,y=coefficient)) +
+  geom_boxplot() +
+  geom_point(aes(colour=condition), size = 3) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("coefficients from models of heat shock with and without sorbitol")
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+ggplot(data=coefficients[coefficients$motif %in% tail(order_motifs,31)], aes(x=motif,y=coefficient)) +
+  geom_boxplot() +
+  geom_point(aes(colour=condition), size = 3) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("coefficients from models of heat shock with and without sorbitol")
+```
+
+
+
+```{r}
+
+{
+  names_heatshock_25to37_condition = vector(mode="character", length=8)
+  names_heatshock_25to37_condition[1] = "hs_05min_hs-1"
+  names_heatshock_25to37_condition[2] = "hs_10min_hs-1"
+  names_heatshock_25to37_condition[3] = "hs_15min_hs-1"
+  names_heatshock_25to37_condition[4] = "hs_20min_hs-1"
+  names_heatshock_25to37_condition[5] = "hs_30min_hs-1"
+  names_heatshock_25to37_condition[6] = "hs_40min_hs-1"
+  names_heatshock_25to37_condition[7] = "hs_60min_hs-1"
+  names_heatshock_25to37_condition[8] = "hs_80min_hs-1"
+}
+
+{
+  names_heatshock_37to25_condition = vector(mode="character", length=5)
+  names_heatshock_37to25_condition[1] = "hs_37to25_15min"
+  names_heatshock_37to25_condition[2] = "hs_37to25_30min"
+  names_heatshock_37to25_condition[3] = "hs_37to25_45min"
+  names_heatshock_37to25_condition[4] = "hs_37to25_60min"
+  names_heatshock_37to25_condition[5] = "hs_37to25_90min"
+}
+
+```
+
+
+```{r echo=FALSE}
+temp_coefficients_1 = extract_coefficient(models_all_minLambda, names_heatshock_25to37_condition)
+temp_coefficients_1$condition = rep("heat shock",nrow(temp_coefficients_1))
+
+temp_coefficients_2 = extract_coefficient(models_all_minLambda, names_heatshock_37to25_condition)
+temp_coefficients_2$condition = rep("hypothermia",nrow(temp_coefficients_2))
+
+coefficients = rbind(temp_coefficients_1,temp_coefficients_2)
+colnames(coefficients) = c("motif","variable","coefficient","condition")
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+coefficients$motif = factor(coefficients$motif, levels = order_motifs)
+
+ggplot(data=coefficients[coefficients$motif %in% head(order_motifs,31)], aes(x=motif,y=coefficient)) +
+  geom_boxplot() +
+  geom_point(aes(colour=condition), size = 3) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("coefficients from heat shock and hypothermia models")
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+ggplot(data=coefficients[coefficients$motif %in% tail(order_motifs,31)], aes(x=motif,y=coefficient)) +
+  geom_boxplot() +
+  geom_point(aes(colour=condition), size = 3) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("coefficients from heat shock and hypothermia models")
+```
+
+
+
+
+### <a id="motifRank"> comparison motifs rank between each group of models </a>
+As another approach from comparing the motifs' regulatory effect between different type of environmental stresses, we compare the absolute value of their regression coefficients. Motifs are ranked in each model where rank 1 is given to the motifs with highest absolute value of coefficient. Then, for each group of environmental stress, we compute the average rank of each motif weighted by L2 of the coefficients in each model. Therefore, the rank from a model with motifs with low regression coefficients will get less weight rather than that of a model with motifs with high regression coefficients.
+```{r}
+# prepare data
+summary_coefficient_rank = data.frame(matrix(ncol = 4, nrow = 0))
+
+for(environmental_stress in names_environmental_stress){
+  coefficients = extract_coefficient(models_all_minLambda,environmental_stress)
+  #coefficients = coefficients[order(abs(coefficients$value)),]
+  coefficients = coefficients[order(-abs(coefficients$value)),]
+
+  i = 1
+  while (i <= dim(coefficients)[1]) {
+    summary_coefficient_rank = rbind(summary_coefficient_rank, data.frame(
+    motif = coefficients[i]$rn,
+    rank = i,
+    condition = environmental_stress,
+    model.L2 = sqrt(sum(coefficients$value^2))
+    ))
+    i = i+1
+  }
+}
+
+```
+
+
+```{r}
+{
+  names_heatshock_25to37_condition = vector(mode="character", length=8)
+  names_heatshock_25to37_condition[1] = "hs_05min_hs-1"
+  names_heatshock_25to37_condition[2] = "hs_10min_hs-1"
+  names_heatshock_25to37_condition[3] = "hs_15min_hs-1"
+  names_heatshock_25to37_condition[4] = "hs_20min_hs-1"
+  names_heatshock_25to37_condition[5] = "hs_30min_hs-1"
+  names_heatshock_25to37_condition[6] = "hs_40min_hs-1"
+  names_heatshock_25to37_condition[7] = "hs_60min_hs-1"
+  names_heatshock_25to37_condition[8] = "hs_80min_hs-1"
+}
+
+{
+  names_heatshock_37to25_condition = vector(mode="character", length=5)
+  names_heatshock_37to25_condition[1] = "hs_37to25_15min"
+  names_heatshock_37to25_condition[2] = "hs_37to25_30min"
+  names_heatshock_37to25_condition[3] = "hs_37to25_45min"
+  names_heatshock_37to25_condition[4] = "hs_37to25_60min"
+  names_heatshock_37to25_condition[5] = "hs_37to25_90min"
+}
+
+{
+  names_sorbitol_condition = vector(mode="character", length=7)
+  names_sorbitol_condition[1] = "1M_sorbitol_05min"
+  names_sorbitol_condition[2] = "1M_sorbitol_15min"
+  names_sorbitol_condition[3] = "1M_sorbitol_30min"
+  names_sorbitol_condition[4] = "1M_sorbitol_45min"
+  names_sorbitol_condition[5] = "1M_sorbitol_60min"
+  names_sorbitol_condition[6] = "1M_sorbitol_90min"
+  names_sorbitol_condition[7] = "1M_sorbitol_120min"
+}
+
+{
+  names_Nitrogen_condition = vector(mode="character", length=7)
+  names_Nitrogen_condition[1] = "Nitrogen_Depletion_30min"
+  names_Nitrogen_condition[2] = "Nitrogen_Depletion_1h"
+  names_Nitrogen_condition[3] = "Nitrogen_Depletion_2h"
+  names_Nitrogen_condition[4] = "Nitrogen_Depletion_4h"
+  names_Nitrogen_condition[5] = "Nitrogen_Depletion_8h"
+  names_Nitrogen_condition[6] = "Nitrogen_Depletion_12h"
+  names_Nitrogen_condition[7] = "Nitrogen_Depletion_1d"
+}
+
+{
+  names_diamide_condition = vector(mode="character", length=8)
+  names_diamide_condition[1] = "1.5mM_diamide_5min"
+  names_diamide_condition[2] = "1.5mM_diamide_10min"
+  names_diamide_condition[3] = "1.5mM_diamide_20min"
+  names_diamide_condition[4] = "1.5mM_diamide_30min"
+  names_diamide_condition[5] = "1.5mM_diamide_40min"
+  names_diamide_condition[6] = "1.5mM_diamide_50min"
+  names_diamide_condition[7] = "1.5mM_diamide_60min"
+  names_diamide_condition[8] = "1.5mM_diamide_90min"
+}
+
+
+
+
+{
+  names_dithiothrietol_condition = vector(mode="character", length=8)
+  names_dithiothrietol_condition[1] = "2.5mM_DTT_005min_dtt-1"
+  names_dithiothrietol_condition[2] = "2.5mM_DTT_015min_dtt-1"
+  names_dithiothrietol_condition[3] = "2.5mM_DTT_030min_dtt-1"
+  names_dithiothrietol_condition[4] = "2.5mM_DTT_045min_dtt-1"
+  names_dithiothrietol_condition[5] = "2.5mM_DTT_060min_dtt-1"
+  names_dithiothrietol_condition[6] = "2.5mM_DTT_090min_dtt-1"
+  names_dithiothrietol_condition[7] = "2.5mM_DTT_120min_dtt-1"
+  names_dithiothrietol_condition[8] = "2.5mM_DTT_180min_dtt-1"
+}
+
+{
+  names_meanadione_condition = vector(mode="character", length=8)
+  names_meanadione_condition[1] = "1mM_Menadione_10min_redo"
+  names_meanadione_condition[2] = "1mM_Menadione_20min_redo"
+  names_meanadione_condition[3] = "1mM_Menadione_30min_redo"
+  names_meanadione_condition[4] = "1mM_Menadione_40min_redo"
+  names_meanadione_condition[5] = "1mM_Menadione_50min_redo"
+  names_meanadione_condition[6] = "1mM_Menadione_80min_redo"
+  names_meanadione_condition[7] = "1mM_Menadione_120min_redo"
+  names_meanadione_condition[8] = "1mM_Menadione_160min_redo"
+}
+
+{
+  names_H2O2_condition = vector(mode="character", length=10)
+  names_H2O2_condition[1] = "0.32mM_H2O2_10min_redo"
+  names_H2O2_condition[2] = "0.32mM_H2O2_20min_redo"
+  names_H2O2_condition[3] = "0.32mM_H2O2_30min_redo"
+  names_H2O2_condition[4] = "0.32mM_H2O2_40min_rescan"
+  names_H2O2_condition[5] = "0.32mM_H2O2_50min_redo"
+  names_H2O2_condition[6] = "0.32mM_H2O2_60min_redo"
+  names_H2O2_condition[7] = "0.32mM_H2O2_80min_redo"
+  names_H2O2_condition[8] = "0.32mM_H2O2_100min_redo"
+  names_H2O2_condition[9] = "0.32mM_H2O2_120min_redo"
+  names_H2O2_condition[10] = "0.32mM_H2O2_160min_redo"
+}
+
+```
+
+
+```{r echo=FALSE}
+
+summary_coefficient_rank_average = data.frame(matrix(ncol = 3, nrow = 0))
+
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_heatshock_25to37_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "heat shock"
+  ))
+}
+
+
+
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_heatshock_37to25_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "hypothermia"
+  ))
+}
+
+
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_sorbitol_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "sorbitol"
+  ))
+}
+
+
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_diamide_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "diamide"
+  ))
+}
+
+
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_Nitrogen_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "nitrogen"
+  ))
+}
+
+
+  
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_dithiothrietol_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "dithiothrietol"
+  ))
+}
+
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_meanadione_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "meanadione"
+  ))
+}
+
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_H2O2_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "H2O2"
+  ))
+}
+
+
+```
+
+
+##### order the motif
+```{r echo=FALSE}
+order_motifs = summary_motif_frequency[order(-summary_motif_frequency$transcriptAmount),]$motif
+summary_coefficient_rank_average$motif = factor(summary_coefficient_rank_average$motif, levels = order_motifs)
+
+summary_coefficient_rank_average = merge(x = summary_coefficient_rank_average, y = summary_motif_frequency, by = "motif")
+
+```
+
+
+##### plot graph
+```{r echo=FALSE, fig.height=8, fig.width=14}
+ggplot(data=summary_coefficient_rank_average[summary_coefficient_rank_average$motif %in% head(order_motifs,31),], aes(x=motif)) +
+  geom_bar(stat="identity", aes(y=1/rank,fill = group)) +
+  geom_line(aes(y = transcriptAmount/2, colour = "log10 transcript frequency"),group=1, size=1.5) +
+  geom_text(aes(y = transcriptAmount/2, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
+  scale_y_continuous("1 / weighted rank", sec.axis = sec_axis(~.*2, name = "Log10 transcript frequency"), limits = c(0,2)) +
+  ggtitle("average rank motifs from different group of environmental stresses")+
+  scale_fill_manual(values=c('#333333','#ACE5EE','#03C03C','#E69F00','#3C69E7','#999999','#E30022','#9933CC'))
+
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+ggplot(data=summary_coefficient_rank_average[summary_coefficient_rank_average$motif %in% tail(order_motifs,31),], aes(x=motif)) +
+  geom_bar(stat="identity", aes(y=1/rank,fill = group)) +
+  geom_line(aes(y = transcriptAmount/2, colour = "log10 transcript frequency"),group=1, size=1.5) +
+  geom_text(aes(y = transcriptAmount/2, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
+  scale_y_continuous("1 / weighted rank", sec.axis = sec_axis(~.*2, name = "Log10 transcript frequency"), limits = c(0,2)) +
+  ggtitle("average rank motifs from different group of environmental stresses")+
+  scale_fill_manual(values=c('#333333','#ACE5EE','#03C03C','#E69F00','#3C69E7','#999999','#E30022','#9933CC'))
+
+```
+
+
+### <a id="bias"> investigating bias and expression mean of each model </a>
+The bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and could indicate the estimated proportion of the efforts on regulation these cis-regulatory elements make. 
+
+```{r echo=FALSE}
+summary_bias = data.frame(matrix(ncol = 3, nrow = 0))
+
+biases = models_all_minLambda$a0
+
+expressionLevel_matrix = as.matrix(expressionLevel_Gasch[4:length(expressionLevel_Gasch)])
+storage.mode(expressionLevel_matrix) <- "double"
+expressionLevel_column_mean = colMeans(expressionLevel_matrix,na.rm = TRUE)
+
+i = 1
+while(i <= length(names_environmental_stress)){
+  summary_bias = rbind(summary_bias, data.frame(
+    group = "bias",
+    value = biases[i],
+    condition = names_environmental_stress[i]
+  ))
+  summary_bias = rbind(summary_bias, data.frame(
+    group = "expression mean",
+    value = expressionLevel_column_mean[i],
+    condition = names_environmental_stress[i]
+  ))
+  i = i+1
+}
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+{
+  names_heatshock_25to37_condition = vector(mode="character", length=8)
+  names_heatshock_25to37_condition[1] = "hs_05min_hs-1"
+  names_heatshock_25to37_condition[2] = "hs_10min_hs-1"
+  names_heatshock_25to37_condition[3] = "hs_15min_hs-1"
+  names_heatshock_25to37_condition[4] = "hs_20min_hs-1"
+  names_heatshock_25to37_condition[5] = "hs_30min_hs-1"
+  names_heatshock_25to37_condition[6] = "hs_40min_hs-1"
+  names_heatshock_25to37_condition[7] = "hs_60min_hs-1"
+  names_heatshock_25to37_condition[8] = "hs_80min_hs-1"
+}
+
+ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_25to37_condition,], aes(y = value, x=condition, group = group)) +
+  geom_hline(yintercept=0, color = "gray", size = 2) +
+  geom_line(aes(colour=group), size = 2) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="condition") + 
+  ylim(-0.3,0.3)+
+  ggtitle("bias of the models of heat shock")
+
+```
+
+
+
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+{
+  names_heatshock_37to25_condition = vector(mode="character", length=5)
+  names_heatshock_37to25_condition[1] = "hs_37to25_15min"
+  names_heatshock_37to25_condition[2] = "hs_37to25_30min"
+  names_heatshock_37to25_condition[3] = "hs_37to25_45min"
+  names_heatshock_37to25_condition[4] = "hs_37to25_60min"
+  names_heatshock_37to25_condition[5] = "hs_37to25_90min"
+}
+
+ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_37to25_condition,], aes(y = value, x=condition, group = group)) +
+  geom_hline(yintercept=0, color = "gray", size = 2) +
+  geom_line(aes(colour=group), size = 2) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="condition") + 
+  ylim(-0.3,0.3)+
+  ggtitle("bias of the models of hypothermia")
+
+```
+
+
+```{r echo=FALSE, fig.height=11, fig.width=14}
+{
+  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
+  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+}
+
+ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_sorbitol_condition,], aes(y = value, x=condition, group = group)) +
+  geom_hline(yintercept=0, color = "gray", size = 2) +
+  geom_line(aes(colour=group), size = 2) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="condition") + 
+  ylim(-0.3,0.3)+
+  ggtitle("bias of the models of heat shock with sorbitol")
+
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+{
+  names_sorbitol_condition = vector(mode="character", length=7)
+  names_sorbitol_condition[1] = "1M_sorbitol_05min"
+  names_sorbitol_condition[2] = "1M_sorbitol_15min"
+  names_sorbitol_condition[3] = "1M_sorbitol_30min"
+  names_sorbitol_condition[4] = "1M_sorbitol_45min"
+  names_sorbitol_condition[5] = "1M_sorbitol_60min"
+  names_sorbitol_condition[6] = "1M_sorbitol_90min"
+  names_sorbitol_condition[7] = "1M_sorbitol_120min"
+}
+
+ggplot(data=summary_bias[summary_bias$condition %in% names_sorbitol_condition,], aes(y = value, x=condition, group = group)) +
+  geom_line(aes(colour=group), size = 2) +
+  geom_hline(yintercept=0, color = "gray", size = 2) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="condition") + 
+  ylim(-0.3,0.3)+
+  ggtitle("bias of the models of sorbitol")
+
+```
+
+
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+{
+  names_Nitrogen_condition = vector(mode="character", length=7)
+  names_Nitrogen_condition[1] = "Nitrogen_Depletion_30min"
+  names_Nitrogen_condition[2] = "Nitrogen_Depletion_1h"
+  names_Nitrogen_condition[3] = "Nitrogen_Depletion_2h"
+  names_Nitrogen_condition[4] = "Nitrogen_Depletion_4h"
+  names_Nitrogen_condition[5] = "Nitrogen_Depletion_8h"
+  names_Nitrogen_condition[6] = "Nitrogen_Depletion_12h"
+  names_Nitrogen_condition[7] = "Nitrogen_Depletion_1d"
+}
+
+
+
+
+ggplot(data=summary_bias[summary_bias$condition %in% names_Nitrogen_condition,], aes(y = value, x=condition, group = group)) +
+  geom_hline(yintercept=0, color = "gray", size = 2) +
+  geom_line(aes(colour=group), size = 2) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="condition") + 
+  ylim(-0.3,0.3)+
+  ggtitle("bias of the models of Nitrogen stress")
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+{
+  names_diamide_condition = vector(mode="character", length=8)
+  names_diamide_condition[1] = "1.5mM_diamide_5min"
+  names_diamide_condition[2] = "1.5mM_diamide_10min"
+  names_diamide_condition[3] = "1.5mM_diamide_20min"
+  names_diamide_condition[4] = "1.5mM_diamide_30min"
+  names_diamide_condition[5] = "1.5mM_diamide_40min"
+  names_diamide_condition[6] = "1.5mM_diamide_50min"
+  names_diamide_condition[7] = "1.5mM_diamide_60min"
+  names_diamide_condition[8] = "1.5mM_diamide_90min"
+}
+
+ggplot(data=summary_bias[summary_bias$condition %in% names_diamide_condition,], aes(y = value, x=condition, group = group)) +
+  geom_line(aes(colour=group), size = 2) +
+  geom_hline(yintercept=0, color = "gray", size = 2) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="condition") + 
+  ylim(-0.3,0.3)+
+  ggtitle("bias of the models of diamide stress")
+
+```
+
+
 
 
 

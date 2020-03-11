@@ -61,6 +61,23 @@ write.csv(table_3UTR, "../data/3UTR_fungiDB", append = FALSE, sep = " ", dec = "
 ```
 
 
+### gene that not been returned from fungiDB
+```{r}
+names_gene_fungiDB_miss = setdiff(gene_sequence_required,table_3UTR$genename)
+```
+
+
+### 3UTR from Samuel
+```{r}
+#load data
+UTR_Samuel <- read.csv(file="../data/genome_wide_120nt_3UTR_sequence.csv")
+colnames(UTR_Samuel) = c("genename","UTR3_seq")
+
+# check if there is any further gene not exist in the Cheng+fungiDB+Samuel's dataset
+gene_sequence_required = setdiff(names_gene_fungiDB_miss,UTR_Samuel$genename)
+write(gene_sequence_required, "../data/gene_3UTR_required.txt")
+
+```
 
 
 
