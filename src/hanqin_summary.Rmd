@@ -10,7 +10,49 @@ output: html_document
 # set work space for Rstudio
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ```
-# recent progress (2020/03/04 ~ 2020/03/10)
+# Recent progress (2020/03/11 ~ 2020/03/17)
+In order to select significant motifs, we calculate the weighted L2 for each motif over all the conditions so that we could consider no only the regression coefficient but also the transcript frequency at the same time:[[plot](#weightedL2)]
+$$
+\text{c: condition}\\
+\text{g: gene}\\[2ex]
+e_{mg}=
+\begin{cases}
+1,\quad \text{at least one motif } m \text{ is on gene }g\\
+0, \quad otherwise
+\end{cases}\\
+$$
+$$
+\begin{align}
+\text{Variance predicted by motif} &=  \sum_c \sum_g \beta _{mc}^2 \ \times \ e_{mg}\\
+&= \sum_c \beta^2_{mc}\ \times\ transcript\ frequence\\
+&= L_2^2\ \ of \ motif\ \times\ transcript\ frequence
+\end{align}
+$$
+By ordering and plotting the motif with the weighted L2, 6 significant motifs are selected.
+
+Then, we selected 10 groups of models which include "heat shock", "hypothermia", "H2O2", "sorbitol" etc where only the models represented environmental stress within 60mins are considered. mean L2 of each significant motif are computed from their regression coefficients to indicate how much regulatory effect they have under specific environmental stress:[[plot](#meanL2)]
+$$
+mean\ L_2 = \sqrt{{\sum_c^N \beta _{mc}^2}\over \text{N}}
+$$
+
+However, the overall regulatory effect in a cell also depends on how strong the environmental stress is. For example, the change in expression level under heat shock from 25 degree to 37 degree should be much larger than that under heat shock from 29 degree to 33 degree. Therefore, we calculate the proportion of variance explain by motifs over the total variance to reduce such difference:[[plot](#proportionVar)]
+$$
+\begin{align}
+\text{Variance pridict by motif} &=   \sum_c({1\over G}\times \sum_g \beta _{mc}^2 \times e_{mg}  - ({1\over G}\times\sum_g \beta _{mc} \times e_{mg})^2)\\
+&= \sum_c (\beta^2_{mc}\ \times\ percentage\ of\ transcript\ frequence- (\beta_{mc} \times percentage\ of\ transcript\ frequence)^2) \\
+\end{align}
+$$
+
+$$
+\text{proportion of variance explain by motif } = {\text{variance explain by motifs}\over \text{total variance}}
+$$
+We plot bar graphs to compare the value across each group of environmental stresses. The shape of the proportion variance graph is similar to that of the mean of L2. There is still a large difference between the value of heat shock from 29C to 33C and heat shock from 25C to 37C.
+
+
+
+
+
+# Previous progress (2020/03/04 ~ 2020/03/10)
 We [apply downstream sequence with fix-length](#applySamuel) (120 nucleotides) from Samuel as 3'UTR to reduce the loss of the expression level data of 548 genes which is not present in both Cheng's and fungiDB datasets. 503 downstream sequences are applied (3'UTR of 45 genes are not present in all three of the dataset).
 
 To virtualize the data and compare the coefficient across different type of models, we plotted [box graph](#boxPlot) which has coefficient as y-axis and motif as x-axis where each data point come from one coefficient of a model and colored by its group (e.g. heat shock group, hypothermia group).
@@ -77,6 +119,10 @@ In this project, we are interested in using these cis-regulatory features to pre
   - [box graph for cross comparison between two type of environmental stress](#boxPlot)
   - [comparison motifs rank between each group of models](#motifRank)
   - [investigating bias and expression mean of each model](#bias)
+  - [Select motif with weighted square L2](#weightedL2)
+  - [Compare mean of L2 of significant motifs across different group of environmental stress](#meanL2)
+  - [compare proportion of variance explain by each motif](#proportionVar)
+  
 
 
 
@@ -1047,10 +1093,10 @@ With the models from group lasso, we can carefully select the regression coeffic
 }
 
 {
-  names_heatshock_sorbital_condition = vector(mode="character", length=3)
-  names_heatshock_sorbital_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
-  names_heatshock_sorbital_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
-  names_heatshock_sorbital_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
+  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
 } 
 
 {
@@ -1104,7 +1150,7 @@ for(motif in names_motifs_valid){
 }
 
 
-coefficients = extract_coefficient(models_all_minLambda,names_heatshock_sorbital_condition)
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_sorbitol_condition)
 
 for(motif in names_motifs_valid){
   coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
@@ -1168,11 +1214,11 @@ summary_coefficient = merge(x = summary_coefficient, y = summary_motif_frequency
 The following graph shows the L2 norm of the regression coefficient of some significant motif under all environmental conditions. The rank of each motif shows how significant a motif is in the environmental conditions we considered. However, since the models we fitted here only considered some typical environmental stress on yeast and is very unbalanced in the type of condition (about 40 model is temperature relevant), we couldn't say the high-rank motif shown here is significant under general environmental stress.
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "all",]
-summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
+temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coefficient$L2),]
 
 
-ggplot(data=head(summary_coefficient_temp,31), aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+ggplot(data=head(temp_summary_coefficient,31), aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
@@ -1187,12 +1233,12 @@ ggplot(data=head(summary_coefficient_temp,31), aes(x=reorder(motif,-L2), y=L2, f
 the regulatory effect of each motif under hypothermia is much smaller than that under heat shock. This could probably reflect the trigger of environmental stress response (ESR) mention by Gasch et al. (2000): "the ESR is not initiated in response to all environmental changes and that the large, transient changes in expression that are characteristic of the ESR are only seen when this response is initiated and not in the reciprocal response to diminished environmental stress."
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
-summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
+temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coefficient$L2),]
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(unique(temp_summary_coefficient$motif),20),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
@@ -1203,12 +1249,12 @@ ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condi
 ```
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
-summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "heat shock from 25C to 37C" | summary_coefficient$condition == "hypothermia from 37C to 25C",]
+temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coefficient$L2),]
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(unique(temp_summary_coefficient$motif),20),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
+ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
@@ -1224,13 +1270,13 @@ Although most of the regression coefficients are similar in both heat shock with
 
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
-summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coefficient$L2),]
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(unique(temp_summary_coefficient$motif),20),]
 
 
 
-ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
@@ -1244,12 +1290,12 @@ ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=L2, fill=condi
 
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
-summary_coefficient_temp = summary_coefficient_temp[order(-summary_coefficient_temp$L2),]
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(unique(summary_coefficient_temp$motif),20),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coefficient$L2),]
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(unique(temp_summary_coefficient$motif),20),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
+ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
@@ -1272,12 +1318,12 @@ order_motifs = order_motifs[order(-order_motifs$transcriptAmount),]$motif
 
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "all",]
-summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(order_motifs,31),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
+temp_summary_coefficient$motif = factor(temp_summary_coefficient$motif, levels = order_motifs)
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(order_motifs,31),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+ggplot(data=temp_summary_coefficient, aes(x=motif)) +
   geom_bar(stat="identity", aes(y=L2,fill = condition)) +
   geom_line(aes(y = transcriptAmount*3, colour = "log10 transcript frequency"),group=1, size=2) +
   geom_text(aes(y = transcriptAmount*3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
@@ -1293,12 +1339,12 @@ ggplot(data=summary_coefficient_temp, aes(x=motif)) +
 
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "all",]
-summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% tail(order_motifs,31),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
+temp_summary_coefficient$motif = factor(temp_summary_coefficient$motif, levels = order_motifs)
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% tail(order_motifs,31),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+ggplot(data=temp_summary_coefficient, aes(x=motif)) +
   geom_bar(stat="identity", aes(y=L2,fill = condition)) +
   geom_line(aes(y = transcriptAmount*3, colour = "log10 transcript frequency"),group=1, size=2) +
   geom_text(aes(y = transcriptAmount*3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
@@ -1314,12 +1360,12 @@ ggplot(data=summary_coefficient_temp, aes(x=motif)) +
 
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
-summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% head(order_motifs,31),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+temp_summary_coefficient$motif = factor(temp_summary_coefficient$motif, levels = order_motifs)
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(order_motifs,31),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+ggplot(data=temp_summary_coefficient, aes(x=motif)) +
   geom_bar(stat="identity", position=position_dodge(), aes(y=L2,fill = condition)) +
   geom_line(aes(y = transcriptAmount/3, colour = "log10 transcript frequency"),group=1, size=2) +
   geom_text(aes(y = transcriptAmount/3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
@@ -1336,12 +1382,12 @@ ggplot(data=summary_coefficient_temp, aes(x=motif)) +
 
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
-summary_coefficient_temp = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
-summary_coefficient_temp$motif = factor(summary_coefficient_temp$motif, levels = order_motifs)
-summary_coefficient_temp = summary_coefficient_temp[summary_coefficient_temp$motif %in% tail(order_motifs,31),]
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "heat shock from 29C to 33C" | summary_coefficient$condition == "heat shock with sorbitol",]
+temp_summary_coefficient$motif = factor(temp_summary_coefficient$motif, levels = order_motifs)
+temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% tail(order_motifs,31),]
 
 
-ggplot(data=summary_coefficient_temp, aes(x=motif)) +
+ggplot(data=temp_summary_coefficient, aes(x=motif)) +
   geom_bar(stat="identity", position=position_dodge(), aes(y=L2,fill = condition)) +
   geom_line(aes(y = transcriptAmount/3, colour = "log10 transcript frequency"),group=1, size=2) +
   geom_text(aes(y = transcriptAmount/3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
@@ -1369,10 +1415,10 @@ To compare how the coefficient of motif from two different type of environmental
 }
 
 {
-  names_heatshock_sorbital_condition = vector(mode="character", length=3)
-  names_heatshock_sorbital_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
-  names_heatshock_sorbital_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
-  names_heatshock_sorbital_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
+  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
 } 
 
 ```
@@ -1382,7 +1428,7 @@ To compare how the coefficient of motif from two different type of environmental
 temp_coefficients_1 = extract_coefficient(models_all_minLambda, names_heatshock_29to33_condition)
 temp_coefficients_1$condition = rep("heat shock without sorbitol",nrow(temp_coefficients_1))
 
-temp_coefficients_2 = extract_coefficient(models_all_minLambda, names_heatshock_sorbital_condition)
+temp_coefficients_2 = extract_coefficient(models_all_minLambda, names_heatshock_sorbitol_condition)
 temp_coefficients_2$condition = rep("heat shock with sorbitol",nrow(temp_coefficients_2))
 
 coefficients = rbind(temp_coefficients_1,temp_coefficients_2)
@@ -1964,6 +2010,598 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_diamide_condition,], 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+### <a id="weightedL2"> Select motif with weighted square L2 </a>
+In order to focus only on the significant motifs, we calculate the `variance predict by motif` for each motif over all the conditions. In this case, we consider no only the regression coefficient but also the transcript frequence: 
+$$
+\text{c: condition}\\
+\text{g: gene}\\
+\text{G: number of genes}\\[2ex]
+e_{mg}=
+\begin{cases}
+1,\quad \text{at least one motif } m \text{ is on gene }g\\
+0, \quad otherwise
+\end{cases}
+\\[6ex]
+
+\begin{align}
+\text{Variance pridict by motif} &=   \sum_c\sum_g \beta _{mc}^2 \times e_{mg}\\
+&= \beta^2_{mc} \times transcript\ frequency \\
+&= L_2^2\times transcript\ frequency
+\end{align}
+
+$$
+
+
+
+##### group conditions
+```{r}
+
+{
+  names_heatshock_29to33_condition = vector(mode="character", length=3)
+  names_heatshock_29to33_condition[1] = "hs_29to33_05min"
+  names_heatshock_29to33_condition[2] = "hs_29to33_15min"
+  names_heatshock_29to33_condition[3] = "hs_29to33_30min"
+}
+
+{
+  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
+  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+}
+
+
+{
+  names_heatshock_25to37_condition = vector(mode="character", length=4)
+  names_heatshock_25to37_condition[1] = "hs_05min_hs-1"
+  names_heatshock_25to37_condition[2] = "hs_15min_hs-1"
+  names_heatshock_25to37_condition[3] = "hs_30min_hs-1"
+  names_heatshock_25to37_condition[4] = "hs_60min_hs-1"
+}
+
+{
+  names_heatshock_37to25_condition = vector(mode="character", length=4)
+  names_heatshock_37to25_condition[1] = "hs_37to25_15min"
+  names_heatshock_37to25_condition[2] = "hs_37to25_30min"
+  names_heatshock_37to25_condition[3] = "hs_37to25_45min"
+  names_heatshock_37to25_condition[4] = "hs_37to25_60min"
+}
+
+{
+  names_sorbitol_condition = vector(mode="character", length=5)
+  names_sorbitol_condition[1] = "1M_sorbitol_05min"
+  names_sorbitol_condition[2] = "1M_sorbitol_15min"
+  names_sorbitol_condition[3] = "1M_sorbitol_30min"
+  names_sorbitol_condition[4] = "1M_sorbitol_45min"
+  names_sorbitol_condition[5] = "1M_sorbitol_60min"
+}
+
+{
+  names_Nitrogen_condition = vector(mode="character", length=2)
+  names_Nitrogen_condition[1] = "Nitrogen_Depletion_30min"
+  names_Nitrogen_condition[2] = "Nitrogen_Depletion_1h"
+}
+
+{
+  names_diamide_condition = vector(mode="character", length=7)
+  names_diamide_condition[1] = "1.5mM_diamide_5min"
+  names_diamide_condition[2] = "1.5mM_diamide_10min"
+  names_diamide_condition[3] = "1.5mM_diamide_20min"
+  names_diamide_condition[4] = "1.5mM_diamide_30min"
+  names_diamide_condition[5] = "1.5mM_diamide_40min"
+  names_diamide_condition[6] = "1.5mM_diamide_50min"
+  names_diamide_condition[7] = "1.5mM_diamide_60min"
+}
+
+
+{
+  names_dithiothrietol_condition = vector(mode="character", length=5)
+  names_dithiothrietol_condition[1] = "2.5mM_DTT_005min_dtt-1"
+  names_dithiothrietol_condition[2] = "2.5mM_DTT_015min_dtt-1"
+  names_dithiothrietol_condition[3] = "2.5mM_DTT_030min_dtt-1"
+  names_dithiothrietol_condition[4] = "2.5mM_DTT_045min_dtt-1"
+  names_dithiothrietol_condition[5] = "2.5mM_DTT_060min_dtt-1"
+}
+
+{
+  names_meanadione_condition = vector(mode="character", length=5)
+  names_meanadione_condition[1] = "1mM_Menadione_10min_redo"
+  names_meanadione_condition[2] = "1mM_Menadione_20min_redo"
+  names_meanadione_condition[3] = "1mM_Menadione_30min_redo"
+  names_meanadione_condition[4] = "1mM_Menadione_40min_redo"
+  names_meanadione_condition[5] = "1mM_Menadione_50min_redo"
+}
+
+{
+  names_H2O2_condition = vector(mode="character", length=6)
+  names_H2O2_condition[1] = "0.32mM_H2O2_10min_redo"
+  names_H2O2_condition[2] = "0.32mM_H2O2_20min_redo"
+  names_H2O2_condition[3] = "0.32mM_H2O2_30min_redo"
+  names_H2O2_condition[4] = "0.32mM_H2O2_40min_rescan"
+  names_H2O2_condition[5] = "0.32mM_H2O2_50min_redo"
+  names_H2O2_condition[6] = "0.32mM_H2O2_60min_redo"
+}
+
+
+```
+
+
+```{r echo=FALSE}
+summary_motif_frequency_percentage = data.frame(matrix(ncol= 0, nrow = 1))
+for(motif in names_motifs_valid){
+  summary_motif_frequency_percentage[motif] = sum(fullTable_Gasch[[motif]] > 0)/nrow(fullTable_Gasch)
+}
+```
+
+
+
+```{r echo=FALSE}
+
+summary_coefficient = data.frame(matrix(ncol = 5, nrow = 0))
+
+coefficients = extract_coefficient(models_all_minLambda,names_environmental_stress)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "all",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_environmental_stress)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_29to33_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "heat shock from 29C to 33C",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_heatshock_29to33_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_sorbitol_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "heat shock from 29C to 33C with sorbitol",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_heatshock_sorbitol_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_25to37_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "heat shock from 25C to 37C",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_heatshock_25to37_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_heatshock_37to25_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "hypothermia from 37C to 25C",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_heatshock_37to25_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_sorbitol_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "sorbitol",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_sorbitol_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_Nitrogen_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "nitrogen",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_Nitrogen_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_diamide_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "diamide",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_diamide_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_dithiothrietol_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "dithiothrietol",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_dithiothrietol_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_meanadione_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "meanadione",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_meanadione_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+
+coefficients = extract_coefficient(models_all_minLambda,names_H2O2_condition)
+
+for(motif in names_motifs_valid){
+  coefficients_motif_specific = coefficients[coefficients$rn == motif,]$value
+  summary_coefficient = rbind(summary_coefficient, data.frame(
+    motif = motif,
+    condition = "H2O2",
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2) / length(names_H2O2_condition)),
+    varianceExplain = sum(coefficients_motif_specific^2*as.numeric(summary_motif_frequency_percentage[motif])) - sum((coefficients_motif_specific*as.numeric(summary_motif_frequency_percentage[motif]))^2)
+  ))
+}
+
+
+```
+
+```{r echo=FALSE}
+summary_motif_frequency = data.frame(matrix(ncol= 2, nrow = 0))
+
+for(motif in names_motifs_valid){
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = motif,
+    transcriptAmount = sum(fullTable_Gasch[[motif]] > 0)
+  ))
+}
+
+```
+
+
+```{r echo = FALSE}
+summary_coefficient = merge(x = summary_coefficient, y = summary_motif_frequency, by = "motif")
+```
+
+```{r echo=FALSE}
+summary_coefficient$weightedsquareL2 = summary_coefficient$transcriptAmount*summary_coefficient$L2*summary_coefficient$L2
+```
+
+
+
+##### manage plotting order
+```{r echo=FALSE}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
+order_motifs = temp_summary_coefficient[order(-temp_summary_coefficient$weightedsquareL2),]$motif
+summary_coefficient$motif = factor(summary_coefficient$motif, levels = order_motifs)
+```
+
+##### plotting the weighted square L2 of each motif
+```{r echo=FALSE, fig.height=8, fig.width=14}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
+
+ggplot(data=temp_summary_coefficient[temp_summary_coefficient$motif %in% head(order_motifs,31),], 
+       aes(x=motif, y=weightedsquareL2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        title = element_text(size = 14)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("weighted L2 of the non-zero regression coefficient under all condition")
+```
+
+
+##### select motifs
+We selected the 6 motifs with the highest weighted L2 value. They should be reliable significant motifs under the environmental conditions we considered.
+
+```{r}
+names_motifs_significant = head(order_motifs,6)
+```
+
+
+
+
+### <a id="meanL2"> Compare mean of L2 of significant motifs across different group of environmental stress </a>
+First, We align the models by only considering the model with time slices within 5min to 60mins. For each group of environmental stress, we calculate the mean of L2 to allow cross comparison across environmental stresses group with different number of models:
+
+$$
+mean\ L_2 = \sqrt{{\sum_c^N \beta _{mc}^2}\over \text{N}}
+$$
+
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[1:3] & summary_coefficient$condition != "all",]
+
+ggplot(data=temp_summary_coefficient, aes(x=motif, y=meanL2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") +
+  ylim(0,0.65) +
+  ggtitle("compare mean L2 of motif from different environmental stresses group")
+```
+
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[4:6] & summary_coefficient$condition != "all",]
+
+ggplot(data=temp_summary_coefficient, aes(x=motif, y=meanL2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.65) +
+  ggtitle("compare mean L2 of motif from different environmental stresses group")
+```
+
+
+### <a id="proportionVar"> compare proportion of variance explain by each motif </a>
+However, the overall regulatory effect in a cell also depends on how strong the environmental stress is. For example, the change in expression level under heat shock from 25 degree to 37 degree should be much larger than that under heat shock from 29 degree to 33 degree. Therefore, we calculate the proportion of variance explain by motifs over the total variance to reduce such difference
+
+We plot bar graphs to compare the value across each group of environmental stresses. The shape of the proportion variance graph is similar to that of the mean of L2. There is still a large difference between the value of heat shock from 29C to 33C and heat shock from 25C to 37C.
+
+$$
+\begin{align}
+\text{Variance pridict by motif} &=   \sum_c({1\over G}\times \sum_g \beta _{mc}^2 \times e_{mg}  - ({1\over G}\times\sum_g \beta _{mc} \times e_{mg})^2)\\
+&= \sum_c (\beta^2_{mc}\ \times\ percentage\ of\ transcript\ frequence- (\beta_{mc} \times percentage\ of\ transcript\ frequence)^2) \\
+\end{align}
+$$
+
+$$
+\text{proportion of variance explain by motif } = {\text{variance explain by motifs}\over \text{total variance}}
+$$
+
+##### compute the total variance of expression level in each group
+```{r echo=FALSE}
+
+summary_variance = data.frame(matrix(ncol = 2, nrow = 0))
+
+var = 0
+for(condition in names_environmental_stress){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "all",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_heatshock_29to33_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "heat shock from 29C to 33C",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_heatshock_sorbitol_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "heat shock from 29C to 33C with sorbitol",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_heatshock_25to37_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "heat shock from 25C to 37C",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_heatshock_37to25_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "hypothermia from 37C to 25C",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_sorbitol_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "sorbitol",
+  sumVariance = as.numeric(var)
+))
+
+
+
+var = 0
+for(condition in names_Nitrogen_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "nitrogen",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_diamide_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "diamide",
+  sumVariance = as.numeric(var)
+))
+
+
+
+var = 0
+for(condition in names_dithiothrietol_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "dithiothrietol",
+  sumVariance = as.numeric(var)
+))
+
+
+
+var = 0
+for(condition in names_meanadione_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "meanadione",
+  sumVariance = as.numeric(var)
+))
+
+
+var = 0
+for(condition in names_H2O2_condition){
+  var = var + var(fullTable_Gasch_impute_knn[condition])
+}
+
+summary_variance = rbind(summary_variance, data.frame(
+  condition = "H2O2",
+  sumVariance = as.numeric(var)
+))
+
+
+```
+
+
+```{r echo=FALSE}
+summary_coefficient = merge(x = summary_coefficient, y = summary_variance, by = "condition", all = TRUE)
+```
+
+
+```{r echo=FALSE}
+summary_coefficient$proportionVariance = summary_coefficient$varianceExplain/summary_coefficient$sumVariance
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[1:3] & summary_coefficient$condition != "all",]
+
+ggplot(data=temp_summary_coefficient, aes(x=motif, y=proportionVariance, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.03) +
+  ggtitle("compare proportion variance of motif from different environmental stresses group")
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[4:6] & summary_coefficient$condition != "all",]
+
+ggplot(data=temp_summary_coefficient, aes(x=motif, y=proportionVariance, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.03) +
+  ggtitle("compare proportion variance of motif from different environmental stresses group")
+```
 
 
 

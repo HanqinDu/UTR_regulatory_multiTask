@@ -1544,7 +1544,7 @@ ggplot(data=summary_coefficient_rank_average[summary_coefficient_rank_average$mo
 The bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and could indicate the estimated proportion of the efforts on regulation these cis-regulatory elements make. 
 
 ```{r echo=FALSE}
-summary_bias = data.frame(matrix(ncol = 3, nrow = 0))
+summary_bias = data.frame(matrix(ncol = 4, nrow = 0))
 
 biases = models_all_minLambda$a0
 
@@ -1557,15 +1557,21 @@ while(i <= length(names_environmental_stress)){
   summary_bias = rbind(summary_bias, data.frame(
     group = "bias",
     value = biases[i],
-    condition = names_environmental_stress[i]
+    condition = names_environmental_stress[i],
+    std = 0
   ))
   summary_bias = rbind(summary_bias, data.frame(
     group = "expression mean",
     value = expressionLevel_column_mean[i],
-    condition = names_environmental_stress[i]
+    condition = names_environmental_stress[i],
+    std = unname(sqrt(var(expressionLevel_Gasch[names_environmental_stress[i]],na.rm = TRUE)))
   ))
   i = i+1
 }
+
+summary_bias$value = as.numeric(summary_bias$value)
+summary_bias$std = as.numeric(summary_bias$std)
+
 ```
 
 
@@ -1583,6 +1589,7 @@ while(i <= length(names_environmental_stress)){
 }
 
 ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_25to37_condition,], aes(y = value, x=condition, group = group)) +
+  geom_errorbar(aes(ymin=value-std/10, ymax=value+std/10), width=0, size = 1.2, colour = "gray") +
   geom_hline(yintercept=0, color = "gray", size = 2) +
   geom_line(aes(colour=group), size = 2) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
@@ -1590,7 +1597,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_25to37_cond
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_x_discrete(name ="condition") + 
-  ylim(-0.3,0.3)+
+  ylim(-0.45,0.15)+
   ggtitle("bias of the models of heat shock")
 
 ```
@@ -1610,6 +1617,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_25to37_cond
 }
 
 ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_37to25_condition,], aes(y = value, x=condition, group = group)) +
+  geom_errorbar(aes(ymin=value-std/10, ymax=value+std/10), width=0, size = 1.2, colour = "gray") +
   geom_hline(yintercept=0, color = "gray", size = 2) +
   geom_line(aes(colour=group), size = 2) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
@@ -1617,7 +1625,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_37to25_cond
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_x_discrete(name ="condition") + 
-  ylim(-0.3,0.3)+
+  ylim(-0.4,0.2)+
   ggtitle("bias of the models of hypothermia")
 
 ```
@@ -1634,6 +1642,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_37to25_cond
 ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_sorbitol_condition,], aes(y = value, x=condition, group = group)) +
   geom_hline(yintercept=0, color = "gray", size = 2) +
   geom_line(aes(colour=group), size = 2) +
+  geom_errorbar(aes(ymin=value-std/5, ymax=value+std/5), width=0, size = 1.2, colour = "gray") +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
@@ -1659,6 +1668,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_heatshock_sorbitol_co
 ggplot(data=summary_bias[summary_bias$condition %in% names_sorbitol_condition,], aes(y = value, x=condition, group = group)) +
   geom_line(aes(colour=group), size = 2) +
   geom_hline(yintercept=0, color = "gray", size = 2) +
+  geom_errorbar(aes(ymin=value-std/5, ymax=value+std/5), width=0, size = 1.2, colour = "gray")+
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
@@ -1690,6 +1700,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_sorbitol_condition,],
 ggplot(data=summary_bias[summary_bias$condition %in% names_Nitrogen_condition,], aes(y = value, x=condition, group = group)) +
   geom_hline(yintercept=0, color = "gray", size = 2) +
   geom_line(aes(colour=group), size = 2) +
+  geom_errorbar(aes(ymin=value-std/5, ymax=value+std/5), width=0, size = 1.2, colour = "gray")+
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
@@ -1716,6 +1727,7 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_Nitrogen_condition,],
 ggplot(data=summary_bias[summary_bias$condition %in% names_diamide_condition,], aes(y = value, x=condition, group = group)) +
   geom_line(aes(colour=group), size = 2) +
   geom_hline(yintercept=0, color = "gray", size = 2) +
+  geom_errorbar(aes(ymin=value-std/5, ymax=value+std/5), width=0, size = 1.2, colour = "gray")+
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
@@ -1724,7 +1736,9 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_diamide_condition,], 
   ylim(-0.3,0.3)+
   ggtitle("bias of the models of diamide stress")
 
+typeof(summary_bias[1,]$condition)
 ```
+
 
 
 
