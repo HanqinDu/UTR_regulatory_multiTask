@@ -10,7 +10,19 @@ output: html_document
 # set work space for Rstudio
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ```
-# Recent progress (2020/03/11 ~ 2020/03/17)
+
+```{r echo=FALSE}
+eval_KNN_validation = TRUE
+eval_crossValidation = TRUE
+```
+
+
+# recent progress (2020/03/18 ~ 2020/03/24)
+To evaluate the reliability of the regression coefficient of significant motifs, we fit a linear model with selected motifs and investigate their regression coefficient and standard error. According to previous figures, we apply the gene expression levels 15 or 20 mins after specific environmental stress when the regulatory effect of motifs is the strongest. We fitted 10 models in total and plot their coefficient with error bars represent 1 standard error.[[plot](#significantCoefficient)]
+
+
+
+# previous progress (2020/03/11 ~ 2020/03/17)
 In order to select significant motifs, we calculate the weighted L2 for each motif over all the conditions so that we could consider no only the regression coefficient but also the transcript frequency at the same time:[[plot](#weightedL2)]
 $$
 \text{c: condition}\\
@@ -47,7 +59,6 @@ $$
 \text{proportion of variance explain by motif } = {\text{variance explain by motifs}\over \text{total variance}}
 $$
 We plot bar graphs to compare the value across each group of environmental stresses. The shape of the proportion variance graph is similar to that of the mean of L2. There is still a large difference between the value of heat shock from 29C to 33C and heat shock from 25C to 37C.
-
 
 
 
@@ -122,6 +133,7 @@ In this project, we are interested in using these cis-regulatory features to pre
   - [Select motif with weighted square L2](#weightedL2)
   - [Compare mean of L2 of significant motifs across different group of environmental stress](#meanL2)
   - [compare proportion of variance explain by each motif](#proportionVar)
+  - [significant test with linear model](#linearSignificant)
   
 
 
@@ -209,6 +221,14 @@ plot_models_line <- function(models, conditions, lineNumber) {
   
 }
 
+
+extract_coefficient_lm <- function(model, groupName){
+  df = data.frame(summary(model)$coefficients[2:model$rank,])
+  df$motif = rownames(df)
+  df$condition = groupName
+  rownames(df) = NULL
+  return(df)
+}
 
 ```
 
@@ -758,7 +778,7 @@ Applying imputation to estimate the missing values should be a much better way r
 According to their article, when we consider gene A that has one missing value under environmental stress X, we could look for how the expression level of gene A change in other environmental stress Y and looking for k other genes B that show similar behavior as gene A. Then we fill the missing value by the weighted average of genes B. The contribution of each gene is weighted by similarity of its expression to that of gene A. 
 
 we can estimate the performance of imputation by randomly knocking out 0.1% of non-NA and check the mean square error between estimation and actual value.
-```{r eval=FALSE}
+```{r echo=FALSE, eval=eval_KNN_validation}
 
 k_value_validation_df = data.frame(matrix(ncol = 2, nrow = 0))
 
@@ -804,7 +824,6 @@ for(k in k_list){
     }
     
     k_value_validation_df = rbind(k_value_validation_df, c(k,se/j))
-    print(paste("k = ",k," mse = ",se/j))
   }
 }
 
@@ -818,7 +837,7 @@ k_value_validation_ds <- do.call(rbind, lapply(split(k_value_validation_df, k_va
 
 ```
 
-```{r echo=FALSE, eval=FALSE}
+```{r echo=FALSE, eval=eval_KNN_validation}
 ggplot() +
   geom_point(data = k_value_validation_df, aes(k, mse)) +
   geom_point(data = k_value_validation_ds, aes(k, mean), colour = 'red', size = 3) +
@@ -900,7 +919,7 @@ colnames(baseline_ds) = c("mean","sd")
 
 
 
-```{r eval=FALSE}
+```{r eval=eval_KNN_validation}
 ggplot() +
   geom_point(data = baseline_df, aes("NA to column mean", mse)) +
   geom_point(data = k_value_validation_df[k_value_validation_df$k == 11,], aes("kNN imputation (k=11)",mse)) +
@@ -947,7 +966,7 @@ x = as.matrix(fullTable_Gasch_impute_knn[names_motifs_valid])
 y = as.matrix(fullTable_Gasch_impute_knn[names_environmental_stress])
 ```
 
-```{r eval=FALSE}
+```{r eval=eval_crossValidation}
 cv_models_all = cv.glmnet(x, y, family = "mgaussian")
 plot(cv_models_all)
 ```
@@ -956,24 +975,26 @@ plot(cv_models_all)
 
 ### <a id="trainingModels"> training model with selected lambda </a>
 training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
-```{r}
-# to skip cross validation
-lambda.min = 0.108274493279888
-lambda.1se = 0.695996358333947
+```{r eval=!eval_crossValidation}
+# setting lambda manually
+lambda.min = 0.0334379510944218
+lambda.1se = 0.235898134217399
 
 models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = lambda.min)
 models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = lambda.1se)
+```
 
-#models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
-#models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
+```{r eval=eval_crossValidation}
+models_all_minLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.min)
+models_all_1seLambda = glmnet(x, y, family = "mgaussian", lambda = cv_models_all$lambda.1se)
 
-#paste("lambda.min =",cv_models_all$lambda.min)
-#paste("lambda.1se =",cv_models_all$lambda.1se)
+paste("lambda.min =",cv_models_all$lambda.min)
+paste("lambda.1se =",cv_models_all$lambda.1se)
 ```
 
 
 ### the penalize effect with λ = lambda.1se is much stronger than that with λ = lambda.min
-We summary coefficients from all the models together to compare the penalized effect of models with different λ values. The model with λ = lambda.1se penalizes more than 90% of coefficients to 0 while the model with λ = lambda.min keep more than half of its coefficients non-zero.
+We summary coefficients from all the models together to compare the penalized effect of models with different λ values. The model with λ = lambda.1se penalizes about 80% of coefficients to 0 while the model with λ = lambda.min keep more than half of its coefficients non-zero.
 
 ```{r echo=FALSE}
 summary_lambda_coefficient = data.frame(matrix(ncol = 3, nrow = 0))
@@ -2603,5 +2624,181 @@ ggplot(data=temp_summary_coefficient, aes(x=motif, y=proportionVariance, fill=co
   ggtitle("compare proportion variance of motif from different environmental stresses group")
 ```
 
+
+
+
+
+
+
+
+
+### <a id="linearSignificant"> significant test with linear model </a>
+To evaluate the reliability of the regression coefficient of significant motifs, we fit a linear model with selected motifs and investigate their regression coefficient and standard error. According to previous figures, we apply the gene expression levels 15 or 20 mins after specific environmental stress when the regulatory effect of motifs is strong. We fitted 10 models in total and plot their coefficient and standard error. The error bars represent 1 standard error.
+
+
+```{r}
+ names_motifs_significant = c(
+  'UGUAHMNUA',
+  'ATATTC',
+  'TGTATAWT',
+  'TGTAAATA',
+  'WUUGUAWUWU',
+  'ATACGGTGT'
+)
+```
+
+##### heat shock from 29C to 33C
+```{r echo=FALSE, fig.height=6, fig.width=8}
+formula_model = as.formula(paste("hs_29to33_15min ~",paste(names_motifs_significant, collapse = "+")))
+model_hs_29to33 = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_hs_29to33)
+```
+
+##### heat shock from 29C to 33C with sorbitol
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`29C(1M_sorbitol)~33C(1M_sorbitol)_15min`
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_hs_29to33_sorbitol = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_hs_29to33_sorbitol)
+```
+
+##### heat shock from 25C to 37C
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`hs_15min_hs-1`
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_hs_25to37 = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_hs_25to37)
+```
+
+##### hypothermia from 37C to 25C
+```{r echo=FALSE, fig.height=6, fig.width=8}
+formula_model = as.formula(paste("hs_37to25_15min ~",paste(names_motifs_significant, collapse = "+")))
+model_hs_37to25 = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_hs_37to25)
+```
+
+
+##### sorbitol
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1M_sorbitol_15min`
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_sorbitol = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_sorbitol)
+```
+
+
+##### nitrogen
+```{r echo=FALSE, fig.height=6, fig.width=8}
+formula_model = as.formula(paste("Nitrogen_Depletion_30min ~",paste(names_motifs_significant, collapse = "+")))
+model_nitrogen = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_nitrogen)
+```
+
+##### dianide
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$'1.5mM_diamide_20min'
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_diamide = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_diamide)
+```
+
+
+##### dithiothriethol
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`2.5mM_DTT_015min_dtt-1`
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_dithiothriethol = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_dithiothriethol)
+```
+
+
+##### menadione
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1mM_Menadione_20min_redo`
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_menadione = lm(formula_model,fullTable_Gasch_impute_knn)
+
+
+par(mfrow=c(2,2))
+plot(model_menadione)
+```
+
+
+##### H2O2
+```{r echo=FALSE, fig.height=6, fig.width=8}
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`0.32mM_H2O2_20min_redo`
+formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
+model_H2O2 = lm(formula_model,fullTable_Gasch_impute_knn)
+
+par(mfrow=c(2,2))
+plot(model_H2O2)
+```
+
+
+
+
+```{r echo=FALSE}
+summary_coefficient = rbind(
+  extract_coefficient_lm(model_hs_29to33,"heat shock from 29C to 33C"),
+  extract_coefficient_lm(model_hs_29to33_sorbitol,"heat shock from 29C to 33C with sorbitol"),
+  extract_coefficient_lm(model_hs_25to37,"heat shock from 25C to 37C"),
+  extract_coefficient_lm(model_hs_37to25,"hypothermia from 37C to 25C"),
+  extract_coefficient_lm(model_sorbitol,"sorbitol"),
+  extract_coefficient_lm(model_nitrogen,"nitrogen"),
+  extract_coefficient_lm(model_diamide,"diamide"),
+  extract_coefficient_lm(model_dithiothriethol,"dithiothriethol"),
+  extract_coefficient_lm(model_menadione,"menadione"),
+  extract_coefficient_lm(model_H2O2,"H2O2")
+  )
+
+```
+
+
+
+##### <a id="significantCoefficient"> coefficients </a>
+```{r echo=FALSE, fig.height=8, fig.width=14}
+ggplot(summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[1:3],], aes(x=motif, y=Estimate, group=condition, color=condition)) + 
+  geom_hline(yintercept=0, linetype="dashed", size = 2, color = "gray50")+
+  geom_point(position=position_dodge(0.6),size = 3)+
+  geom_errorbar(aes(ymin=Estimate-Std..Error, ymax=Estimate+Std..Error),width=.8,size=1,position=position_dodge(0.6))+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  ylim(1,-1.1)+
+  ggtitle("linear regression coefficient of significant motifs under each environmental stress")
+
+```
+
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+ggplot(summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[4:6],], aes(x=motif, y=Estimate, group=condition, color=condition)) + 
+  geom_hline(yintercept=0, linetype="dashed", size = 2, color = "gray50")+
+  geom_point(position=position_dodge(0.6),size = 3)+
+  geom_errorbar(aes(ymin=Estimate-Std..Error, ymax=Estimate+Std..Error), width=.8, size=1,position=position_dodge(0.6))+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  ylim(1,-1.1)+
+  ggtitle("linear regression coefficient of significant motifs under each environmental stress")
+
+```
 
 
