@@ -23,7 +23,7 @@ In this project, we are interested in using these cis-regulatory features to pre
 
 | File                           | description                                                  |
 | ------------------------------ | ------------------------------------------------------------ |
-| hanqin_summary.Rmd             | Core part of each steps of the project, derived from hanqin_visualize_data and hanqin_group_lasso |
+| hanqin_summary.Rmd             | The core code of the project, describes the analysis process, ideas and plotting. This summary is integrated from hanqin_visualize_data and hanqin_group_lasso. |
 | hanqin_visualize_data.Rmd      | investigate data and justify the group lasso                 |
 | hanqin_group_lasso.Rmd         | apply group lasso and analyse the coefficients               |
 | hanqin_3UTR_data_prepare.Rmd   | preprocess 3'UTR sequence data                               |
