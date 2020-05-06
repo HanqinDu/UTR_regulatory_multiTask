@@ -12,74 +12,11 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 ```
 
 ```{r echo=FALSE}
-eval_KNN_validation = TRUE
-eval_crossValidation = TRUE
+# KNN validation and cross Validation are extremely time-consuming processes
+# set the flags to FALSE to apply previous optimal value and skip the process
+eval_KNN_validation = FALSE
+eval_crossValidation = FALSE
 ```
-
-
-# recent progress (2020/03/18 ~ 2020/03/24)
-To evaluate the reliability of the regression coefficient of significant motifs, we fit a linear model with selected motifs and investigate their regression coefficient and standard error. According to previous figures, we apply the gene expression levels 15 or 20 mins after specific environmental stress when the regulatory effect of motifs is the strongest. We fitted 10 models in total and plot their coefficient with error bars represent 1 standard error.[[plot](#significantCoefficient)]
-
-
-
-# previous progress (2020/03/11 ~ 2020/03/17)
-In order to select significant motifs, we calculate the weighted L2 for each motif over all the conditions so that we could consider no only the regression coefficient but also the transcript frequency at the same time:[[plot](#weightedL2)]
-$$
-\text{c: condition}\\
-\text{g: gene}\\[2ex]
-e_{mg}=
-\begin{cases}
-1,\quad \text{at least one motif } m \text{ is on gene }g\\
-0, \quad otherwise
-\end{cases}\\
-$$
-$$
-\begin{align}
-\text{Variance predicted by motif} &=  \sum_c \sum_g \beta _{mc}^2 \ \times \ e_{mg}\\
-&= \sum_c \beta^2_{mc}\ \times\ transcript\ frequence\\
-&= L_2^2\ \ of \ motif\ \times\ transcript\ frequence
-\end{align}
-$$
-By ordering and plotting the motif with the weighted L2, 6 significant motifs are selected.
-
-Then, we selected 10 groups of models which include "heat shock", "hypothermia", "H2O2", "sorbitol" etc where only the models represented environmental stress within 60mins are considered. mean L2 of each significant motif are computed from their regression coefficients to indicate how much regulatory effect they have under specific environmental stress:[[plot](#meanL2)]
-$$
-mean\ L_2 = \sqrt{{\sum_c^N \beta _{mc}^2}\over \text{N}}
-$$
-
-However, the overall regulatory effect in a cell also depends on how strong the environmental stress is. For example, the change in expression level under heat shock from 25 degree to 37 degree should be much larger than that under heat shock from 29 degree to 33 degree. Therefore, we calculate the proportion of variance explain by motifs over the total variance to reduce such difference:[[plot](#proportionVar)]
-$$
-\begin{align}
-\text{Variance pridict by motif} &=   \sum_c({1\over G}\times \sum_g \beta _{mc}^2 \times e_{mg}  - ({1\over G}\times\sum_g \beta _{mc} \times e_{mg})^2)\\
-&= \sum_c (\beta^2_{mc}\ \times\ percentage\ of\ transcript\ frequence- (\beta_{mc} \times percentage\ of\ transcript\ frequence)^2) \\
-\end{align}
-$$
-
-$$
-\text{proportion of variance explain by motif } = {\text{variance explain by motifs}\over \text{total variance}}
-$$
-We plot bar graphs to compare the value across each group of environmental stresses. The shape of the proportion variance graph is similar to that of the mean of L2. There is still a large difference between the value of heat shock from 29C to 33C and heat shock from 25C to 37C.
-
-
-
-
-# Previous progress (2020/03/04 ~ 2020/03/10)
-We [apply downstream sequence with fix-length](#applySamuel) (120 nucleotides) from Samuel as 3'UTR to reduce the loss of the expression level data of 548 genes which is not present in both Cheng's and fungiDB datasets. 503 downstream sequences are applied (3'UTR of 45 genes are not present in all three of the dataset).
-
-To virtualize the data and compare the coefficient across different type of models, we plotted [box graph](#boxPlot) which has coefficient as y-axis and motif as x-axis where each data point come from one coefficient of a model and colored by its group (e.g. heat shock group, hypothermia group).
-
-[As another approach from comparing the motifs' regulatory effect between different types of environmental stresses, we compare the absolute value of their regression coefficients](#motifRank). Motifs are ranked in each model where rank 1 is given to the motifs with the highest absolute value of coefficient. Then, for each group of environmental stress, we compute the average rank of each motif weighted by L2 of the coefficients in each model. Therefore, the rank from a model with motifs with low regression coefficients will get less weight rather than that of a model with motifs with high regression coefficients.
-
-At last, we [compare the model's bias with the mean of Log2 expression level](#bias). The bias of the model can be considered as the expected gene expression level change of a gene with no cis-regulatory element we considered in the model. In other words, the bias indicates the expression level change that cannot be explained by the model and could indicate the estimated proportion of the efforts on regulation these cis-regulatory elements make.
-
-
-# previous progress (2020/02/26 ~ 2020/03/03)
-followed a suggestion from the group meeting, I replace the baseline of imputation for missing value from "replace missing value by zero" to "[replace missing value by mean of column](#imputationBaseline)". As a result, there is not an obvious difference between the performance of these two baseline approaches.
-
-we downloaded downstream sequence with fix-length (120 nucleotides) as 3'UTR to reduce loss of the expression level data of 1868 genes causing by inner joining the expression level of 6152 genes with the 4388 motif frequency data. 1320 downstream sequences are downloaded from fungiDB. These downloaded sequences are modified and saved as file `3UTR_fungiDB` under the `data` folder. The length of 120 nucleotides is a sensible number just below the median length (suggested by Edward Wallace). As a comparison, we also [calculated the mean and median](#applyFungiDB) of the 3'UTR length from Cheng et al.'s data, which is 144 and 119 respectively. Finally, we plot a bar [graph to compare the frequency of the motif](#fungiDBMotifFrequency) between Cheng's and fungiDB's dataset. Since the frequency of most motifs is quite similar in both datasets, we believe the data from fungiDB is reliable enough to be applied.
-
-Furthermore, we [compare the amount of transcript include each motif and the coefficient of it](#frequencyCoefficient). The log10 transcript frequency is plotted. The regression coefficient of motifs with a low frequency could be unreliable even it is given a significant value.
-
 
 # project discription
 Gene expression is the process through which cells generate diversity and resilience to environmental changes. It consists of two steps: transcription, where an intermediate molecule (mRNA) is produced from the DNA, and translation of mRNA into protein. The rate of transcription and translation can be regulated by regulatory elements acting in both cis and trans. 3'UTR, 5'UTR, and promoter are known as powerful regulatory processes that determine the rate of mRNA synthesis and decay.
@@ -97,6 +34,7 @@ In this project, we are interested in using these cis-regulatory features to pre
   - [apply fix-length downstream sequence from fungiDB as 3'UTR for 1320 of the 1868 genes](#applyFungiDB)
   - [apply fix-length downstream sequence from Samuel as 3'UTR for 503 of the 548 genes](#applySamuel)
   - [check the motif frequency from both dataset "cheng" and "fungiDB"](#fungiDBMotifFrequency)
+  - [compare motif frequency of 120 downstream and actual 3'UTR](#120downstreamUTRcomparison)
   - [8 motifs are removed from list considering their low frequency on 3’UTR](#removeLowFrequencyMotifs)
   
 
@@ -106,7 +44,7 @@ In this project, we are interested in using these cis-regulatory features to pre
   - [9 heat-shock-relevant motifs are selected from linear models](#9significantMotifsHS)
   - [Identify potential relationships between tasks](#potentialRelationshipTask)
 
-- ### Part 3: apply group lasso
+- ### Part 3: Justify group Lasso
 
   - dealing with missing value
     - [distribution of missing value](#distributionMissingValue)
@@ -157,11 +95,13 @@ library(impute)
 ```{r load function, echo=FALSE}
 
 # obtain mean square error from a linear model
+# @model: linear model from stats v3.6.2
 mse <- function(model){
   mean(summary(model)$residuals^2)
 }
 
 # plot graph with error bar by value and deviation
+# @dataset{dataframe}: dataset with label, mean and deviation
 plot_mean_deviation <- function(dataset,label,mean,deviation){
   plot(1:dim(dataset)[1],dataset[[mean]], pch=19,xlab="",ylab="coefficient",xaxt="n",xlim = c(0.5,dim(dataset)[1]+0.5),
        ylim=c(min(dataset[mean]-1.96*dataset[deviation]),max((dataset[mean]+1.96*dataset[deviation]))))
@@ -169,7 +109,9 @@ plot_mean_deviation <- function(dataset,label,mean,deviation){
   axis(side=1,at=1:dim(dataset)[1],labels=dataset[[label]])
 }
 
-# extract coefficients from selected models
+# extract coefficients from selected mgaussian model
+# @models: mguassian model from glmnet
+# @conditions: list of names of sub model (e.g. hs_25Cto33C_10min)
 extract_coefficient <- function(models, conditions) {
   coefficients = NULL
   
@@ -185,6 +127,9 @@ extract_coefficient <- function(models, conditions) {
 }
 
 # plot selected models coefficient with line graph
+# @models: mguassian model from glmnet
+# @conditions: list of names of sub model (e.g. hs_25Cto33C_10min)
+# @lineNumber: indicate how many factors should be includes in each plot
 plot_models_line <- function(models, conditions, lineNumber) {
   coefficients = NULL
   
@@ -203,14 +148,14 @@ plot_models_line <- function(models, conditions, lineNumber) {
     if((i+lineNumber)<= dim(coefficients)[1]){
       print(
       ggplot(data = melt(setDT(coefficients[i:(i+lineNumber-1)], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-        geom_line(aes(colour=rn))+
+        geom_line(aes(colour=rn), size = 1.7)+
         labs(x = "model", y = "regression coefficient") +
         theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1),axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
     }else{
       print(
       ggplot(data = melt(setDT(coefficients[i:dim(coefficients)[1]], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-        geom_line(aes(colour=rn))+
+        geom_line(aes(colour=rn), size = 1.7)+
         labs(x = "model", y = "regression coefficient") +
         theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1), axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
@@ -221,7 +166,8 @@ plot_models_line <- function(models, conditions, lineNumber) {
   
 }
 
-
+# extract all coefficients from a linear model, return a dataframe with an additional column with valued @groupName
+# @model: linear model from stats v3.6.2
 extract_coefficient_lm <- function(model, groupName){
   df = data.frame(summary(model)$coefficients[2:model$rank,])
   df$motif = rownames(df)
@@ -236,95 +182,83 @@ extract_coefficient_lm <- function(model, groupName){
 ### <a id="constructDesignMatrix"> Construct the design matrix </a>
 
 ##### Expression level change of 6152 distinct genes under 173 different environmental stresses from Gasch's study
-In this project, we apply the data describes gene expression level in various environment condition from Gasch's study `Genomic Expression Programs in the Response of Yeast Cells to Environmental Changes`. To figure out how the expression level change, DNA microarrays were used to measure the relatively abundance of mRNA before and after a series of environmental stresses.
+In this project, we imported the data describes gene expression level in various environment condition from Gasch's study where DNA microarrays were applied to measure the relative abundance of mRNA (relative transcript level) before and after a series of environmental stresses. The dataset consists of 6152 rows and 176 columns where each row represents a gene of yeast. The first 3 columns provide the details of the gene and the other 173 columns describe the normalized, background-corrected log2 values expression level change under 173 different environmental stress.
 
 
 ##### The 69 candidate sequence motifs we use in this project is from 3 different studies:
 
-(1) 53 of them come from the study of Shalgi et al (2005). The candidate motifs are derived by analyzing the exhaustively enumerating all k-mers(k = {8,9,10,11,12}) and looking for over-represented motifs with extreme half-life value. For the k-mers method, 515 significant k-mers are selected with ranksum test and clustered by ClustalW which resulted in 51 clusters of motifs. on the other hand, 2 more motifs are found by grouping genes with extreme half-life and ran Gibbs sampler.
+53 candidate sequence motifs came from the study of Shalgi et al (2005), where motifs are derived by analyzing the exhaustively enumerating all k-mers(k = {8,9,10,11,12}) and looking for over-represented motifs with extreme half-life value. 515 significant k-mers were selected with ranksum test and clustered by ClustalW which resulted in 51 clusters of motifs. Additionally, two more motifs were found by grouping genes with extreme half-life and ran Gibbs sampler.
 
-(2) 14 of them come from the study of Hogan et al. (2008) who have applied two related computational methods to identify candidates for the binding sites of 40 out of the more than 500 known and predicted RBPs in S. cerevisiae: (1)“finding informative regulatory elements” (FIRE) and (2)“relative filtering by nucleotide enrichment” (REFINE). The previous one searches for motifs with informative patterns of enrichment and the other one identifies all hexamers that are significantly enriched in untranslated regions, filters out regions of target sequences that are relatively devoid of such hexamers, and then applies the “multiple expectation maximization for motif elicitation” (MEME) motif-finding algorithm. As a result, 14 motifs that are likely to be the binding sites of 16 RBP are found.
-  
-(3) The rest 4 are from the study of Cheng (2017), four mRNA-stability related motifs in the 3′ UTR are found by De novo motif searching and their reliability and effect have been examined by linear mixed effect model, Fisher test P-value corrected with Benjamini–Hochberg, Wilcoxon rank-sum test and multivariate linear regression.
+14 candidate sequence motifs came from the study of Hogan et al. (2008). Two related computational methods were applied to identify candidate binding sites of 40 out of the more than 500 known and predicted RBPs in S. cerevisiae: (1)“finding informative regulatory elements” (FIRE) and (2)“relative filtering by nucleotide enrichment” (REFINE). The former searches for motifs with informative patterns of enrichment. The other one identifies all hexamers that are significantly enriched in untranslated regions, filters out regions of target sequences that are relatively devoid of such hexamers, and then applies the "multiple expectation maximization for motif elicitation" (MEME) motif-finding algorithm. As a result, 14 motifs that are likely to be the binding sites of 16 RBP are found. 
+
+The rest 4 were from the study of Cheng (2017): four mRNA-stability related motifs in the 3′ UTR were found by De novo motif searching and their reliability and effect have been examined by linear mixed effect model, Fisher test P-value corrected with Benjamini–Hochberg, Wilcoxon ranksum test and multivariate linear regression.
+
 
 ##### UTR sequence of 4388 genes from Cheng et al. 
-The UTR sequence of 4388 genes are from Cheng et al. (2017) as well. 
+The majority of 3'UTR data came from the research of Cheng et al. Annotated transcript sequences data of 4284 genes out of 6152 genes were downloaded from the GitHub sites introduced in their paper.
 
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 
-```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
-
-#ref datasets for UTRs 
+# load Cheng's UTR sequence 
 UTR_cheng <- read_rds("../data/Sun_mutation_UTRs.rds")
-#Get sequences from UTR_cheng in a separate vector
-UTR_3 <- UTR_cheng$UTR3_seq
 
-#Load Manually created motifs list into a vector
+
+# load motifs and covert to regular expression
 motifs_raw <- scan("../data/list_motifs.txt", character())
-motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
 
 
-# load Gasch's data
+# load Gasch's data and convert all the expression data to number
 expressionLevel_Gasch <- read_tsv("../data/Gasch2000_complete_dataset_rename.txt", 
                        locale = locale(decimal = ","))
 
-# convert all the expression data to number
 for (i in names(expressionLevel_Gasch)[3:176]) {
   expressionLevel_Gasch[[i]] <- as.numeric(as.character(expressionLevel_Gasch[[i]]))
 }
 
 ```
 
-```{r construct motif frequency, echo=FALSE}
+```{r echo=FALSE}
 
-#Dictionary for non-specific codes and converting U -> T
-motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
-
-#Initate ref tibble and store gene names
+# initate ref tibble and store gene names
 ref_motifs <- tibble(geneName = UTR_cheng$genename)
 
-
-#Search and add frequency of each c(motif) as a column in ref dataset
+# search and add frequency of each c(motif) as a column in ref dataset
 for (i in 1:length(motifs)){
-  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_cheng$UTR3_seq, motifs[i]))
 }
 
+
+# record all names of motifs and environmental stress
 names_motifs_all = names(ref_motifs)[2:length(ref_motifs)]
 names_environmental_stress = names(expressionLevel_Gasch)[4:length(expressionLevel_Gasch)]
 
-```
-
-
-```{r merge motifs frequency with gasch data, echo=FALSE}
-
-# merge motifs
+# construct design matrix by inner join expression data and motif frequency data
 fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
 
-# convert type of motifs frequency to factor for violin plotting
-fullTable_Gasch_factor = fullTable_Gasch
-for(i in names_motifs_all){
-    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
-}
-
 ```
+
 
 ### <a id="geneLoss"> 1868 gene expression level data loss after inner join above data by gene name. </a>
 After inner joining the expression level of 6152 genes with the 4388 motif frequency data which computed from 3'UTR data of Cheng's study, expression level data of 1868 genes loss.
-```{r}
+```{r echo=FALSE}
 names_gene_information_loss = setdiff(expressionLevel_Gasch$geneName,UTR_cheng$genename)
-length(names_gene_information_loss)
+
+print(paste("number of missing 3'UTR sequence", length(names_gene_information_loss)))
 ```
 
 
 ### <a id="applyFungiDB">apply fix-length downstream sequence from fungiDB as 3'UTR for 1320 of the 1868 genes. </a>
-
-first, we check the mean length of 3'UTR from Cheng et al.
+First, we checked the mean length of 3'UTR from Cheng et al.
 ```{r echo=FALSE}
 print(paste("median length of 3'UTR from Cheng et al. = ", median(UTR_cheng$UTR3_length,na.rm = TRUE)))
 print(paste("mean length of 3'UTR from Cheng et al. = ", mean(UTR_cheng$UTR3_length,na.rm = TRUE)))
 ```
 
-Since there is no 3'UTR annotation in most of the reliable online database, we download downstream sequence with fix-length (120 nucleotides) as 3'UTR. 1320 downstream sequence are downloaded. The length of 120 nucleotides is suggested by my supervisor Edward Wallance as a sensible number just below the median length.
+Since there is no reliable 3’UTR annotation in most of the online database, we applied downstream sequence with fix-length (120 nucleotides) as 3’UTR. The length of 120 nucleotides is considered as a sensible number close to the median length.
 ```{r warning=FALSE}
+# load UTR sequence from fungiDB
 UTR_fungiDB = read_csv("../data/3UTR_fungiDB")
 UTR_Cheng_fungiDB = rbind(UTR_cheng,UTR_fungiDB,fill=TRUE)
 
@@ -336,23 +270,16 @@ names_gene_fungiDB = UTR_fungiDB$genename
 ### Construct the design matrix with additional data from fungiDB
 ```{r}
 # get UTR sequence from both dataset
-UTR_3 <- UTR_Cheng_fungiDB$UTR3_seq
 
-# Search and add frequency of each c(motif) as a column in ref dataset
 ref_motifs <- tibble(geneName = UTR_Cheng_fungiDB$genename)
 for (i in 1:length(motifs)){
-  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+  ref_motifs <- mutate(.data = ref_motifs,!!motifs_raw[i] := str_count(UTR_Cheng_fungiDB$UTR3_seq, motifs[i]))
 }
 
 
 # merge motifs
 fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
 
-# convert type of motifs frequency to factor for violin plotting
-fullTable_Gasch_factor = fullTable_Gasch
-for(i in names_motifs_all){
-    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
-}
 ```
 
 
@@ -416,7 +343,89 @@ ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gen
 ```
 
 
-### <a id="applySamuel"> Construct the design matrix with additional data from Samuel </a>
+
+
+### <a id="120downstreamUTRcomparison">compare motif frequency of 120 downstream and actual 3'UTR</a>
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+#ref datasets for UTRs 
+UTR_SUN_fungiDB = read_csv("../data/3UTR_SUN_fungiDB")
+
+#Get sequences from UTR_all in a separate vector
+UTR_3 <- UTR_SUN_fungiDB$UTR3_seq
+
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("../data/list_motifs.txt", character())
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+
+```
+
+
+##### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+```{r echo=FALSE}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs_120downstream <- tibble(geneName = UTR_SUN_fungiDB$genename)
+
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+  ref_motifs_120downstream <- mutate(.data = ref_motifs_120downstream,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+names_motifs_all = names(ref_motifs)[2:length(ref_motifs)]
+```
+
+
+```{r}
+ref_motifs = ref_motifs[ref_motifs$geneName %in% ref_motifs_120downstream$geneName,]
+```
+
+
+##### plot the frequency per gene
+```{r echo=FALSE}
+summary_motif_frequency = data.frame(matrix(ncol = 3, nrow = 0))
+
+for(m in names_motifs_all){
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = m,
+    dataset = "3_UTR",
+    frequency_per_gene = sum(ref_motifs[[m]])/nrow(ref_motifs)
+  ))
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = m,
+    dataset = "120_downstream",
+    frequency_per_gene = sum(ref_motifs_120downstream[[m]])/nrow(ref_motifs_120downstream)
+  ))
+}
+
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency_per_gene),]
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% head(unique(summary_motif_frequency$motif),35),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gene), y=frequency_per_gene, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.35)+
+  ggtitle("comparison of the frequency of each motif per gene between actual 3'UTR and 120 downstream")
+```
+
+
+
+
+### <a id="applySamuel"> Construct the design matrix with additional UTR sequence data from Samuel </a>
+additional 503 downstream sequences from Samuel's lab dataset are added to construct the design matrix
 
 ```{r}
 UTR_Samuel <- read.csv(file="../data/genome_wide_120nt_3UTR_sequence.csv")
@@ -439,11 +448,6 @@ for (i in 1:length(motifs)){
 # merge motifs
 fullTable_Gasch <- merge(expressionLevel_Gasch,ref_motifs,by = "geneName")
 
-# convert type of motifs frequency to factor for violin plotting
-fullTable_Gasch_factor = fullTable_Gasch
-for(i in names_motifs_all){
-    fullTable_Gasch_factor[[i]] <- as.factor(as.character(fullTable_Gasch_factor[[i]]))
-}
 ```
 
 
@@ -453,10 +457,10 @@ We matching the 69 motifs on every gene sequence to compute the frequency matrix
 
 | Frequency  | number of motifs (n) |
 | ---------- | -------------------- |
-| n = 0      | 8                    |
-| 0 < n < 6  | 9                    |
-| 5 < n < 21 | 26                   |
-| n > 20     | 26                   |
+| n = 0      | 7                    |
+| 0 < n < 6  | 8                    |
+| 5 < n < 21 | 7                    |
+| n > 20     | 47                   |
 
 One possible explanation of the huge amount of low-frequency motifs is that it is hard to match exactly the regular expression to the UTR sequence. Another point is, the secondary-structure motifs are more likely to be found on 5'UTR rather than 3'UTR. Also, a motif with a significant effect on regulation is reasonable to have a small frequency. 
 
@@ -466,7 +470,7 @@ One possible explanation of the huge amount of low-frequency motifs is that it i
 motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
 
 # plot histgram
-hist(motifs_count_sum,  main = 'histogram of motifs frequency sum')
+hist(motifs_count_sum,  main = 'histogram of motifs frequency sum', breaks = 50)
 
 # remove zero-frequency motifs from list
 remove_list = NULL
@@ -482,8 +486,14 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 length(motifs_count_sum[motifs_count_sum==0])
 length(motifs_count_sum[motifs_count_sum>0 & motifs_count_sum<6])
 length(motifs_count_sum[motifs_count_sum>5 & motifs_count_sum<21])
-length(motifs_count_sum[motifs_count_sum>20])
+length(motifs_count_sum[motifs_count_sum>20 & motifs_count_sum<51])
+length(motifs_count_sum[motifs_count_sum>50])
 ```
+
+
+
+
+
 
 
 # Part 2: Assess the rationality of group lasso
@@ -497,14 +507,14 @@ p_{x,y}= {cov(X,Y)\over \sigma_X \sigma_Y}
 $$
 We start by picking a group of environmental conditions about Heat Shock from Various Temperatures to 37°C. Four motifs show a much higher correlation coefficient rather than the others, which, indicate the linear relationship between these motifs and expression level. One point worth mentioning is that all these motifs are also focused by Abhi where `TGTATAWT` is explained to be positively associated with RNA stability and the rest three of them are explained to be negatively associated with the RNA stability. However, Abhi is not quite confident with the conclusion of `UGUAHMNUA` as the negative relationship can only be derived from Chan's data but not Sun's data. 
 
-
 ```{r}
-names_temperature_condition = vector(mode="character", length=5)
-names_temperature_condition[1] = "hs_17to37_20min"
-names_temperature_condition[2] = "hs_21to37_20min"
-names_temperature_condition[3] = "hs_25to37_20min"
-names_temperature_condition[4] = "hs_29to37_20min"
-names_temperature_condition[5] = "hs_33to37_20min"
+names_temperature_condition = c(
+  "hs_17to37_20min",
+  "hs_21to37_20min",
+  "hs_25to37_20min",
+  "hs_29to37_20min",
+  "hs_33to37_20min"
+)
 ```
 
 ```{r echo=FALSE}
@@ -518,7 +528,7 @@ motif_overview$R_mean <- rowMeans(motif_overview[names_temperature_condition[1:5
 ```
 
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
-## plot motifs with high correlation coefficient
+# plot motifs with high correlation coefficient
 ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA'),names_temperature_condition]), keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn),size=2) + 
   ylim(-0.25,0.1) + 
@@ -526,6 +536,7 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview[c('UGUAHMNUA','TGTATAWT','
   scale_x_discrete(labels=c("hs_17to37_20min" = "17C", "hs_21to37_20min" = "21C","hs_25to37_20min" = "25C","hs_29to37_20min" = "29C", "hs_33to37_20min" = "33C")) + 
   theme(text = element_text(size=24))
 ```
+
 
 
 ### <a id="9significantMotifsHS"> 9 heat-shock-relevant motifs are selected from linear models </a>
@@ -556,8 +567,8 @@ model_hs_17to37 = lm(formula_model_hs_17to37,fullTable_Gasch)
 
 par(mfrow=c(2,2))
 plot(model_hs_17to37)
-print("mean square error:")
-mse(model_hs_17to37)
+print(paste("mean square error:",mse(model_hs_17to37)))
+
 ```
 
 
@@ -567,42 +578,34 @@ mse(model_hs_17to37)
 | Motif      | Estimate | Std.Error | t value | Pr(>\|t\|) |
 | ---------- | -------- | --------- | ------- | ---------- |
 | UGUAHMNUA  | -1.054   | 0.085     | -12.369 | <2e-16     |
-| ATATTC     | 0.309    | 0.057     | 5.432   | 5.90e-08   |
-| TGTATAWT   | -0.468   | 0.095     | -4.907  | 9.62e-07   |
-| WUUGUAWUWU | -0.534   | 0.157     | -3.413  | 0.0006     |
-| UAAUAAUW   | -0.250   | 0.083     | -3.025  | 0.0025     |
-| TGTAAATA   | 0.244    | 0.106     | 2.308   | 0.0211     |
-| AAAATAAAG  | -0.568   | 0.281     | -2.018  | 0.0436     |
-| UUUAAUGA   | 0.302    | 0.162     | 1.864   | 0.0624     |
+| ATATTC     | 0.309    | 0.057     | 5.432   | 1.54e-14   |
+| TGTATAWT   | -0.468   | 0.095     | -4.907  | 5.07e-10   |
+| WUUGUAWUWU | -0.534   | 0.157     | -3.413  | 0.000207   |
+| UAAUAAUW   | -0.250   | 0.083     | -3.025  | 0.106042   |
+| TGTAAATA   | 0.244    | 0.106     | 2.308   | 0.000349   |
+| AAAATAAAG  | -0.568   | 0.281     | -2.018  | 0.022646   |
+| UUUAAUGA   | 0.302    | 0.162     | 1.864   | 0.000394   |
 | TCATGTAT   | -0.327   | 0.207     | -1.580  | 0.1141     |
 
 
 This table is sorted by  `Pr(>|t|)` (also known as the p-value) which is the probability of achieving a |t| as large as or larger than the observed absolute t value if the null hypothesis (estimate = 0) was true. In short, it is the probability that there is no relationship between that feature and the predicted value (Ronald L. Wasserstein et al., 2016). `Estimate` shows the coefficient or weight gains by the responding features in this linear model. `Std.Error` is the standard error of the `estimate` value, which, can be used to calculate the Confidence interval. For example, the 95% confidence interval could be obtained from Estimate +- 1.96*Std.Error. `t value` is calculated from the estimates divided by their standard errors. To make the best use of this value, we need to look up the table of t distribution to learn the reject boundary. In this case, we could simply say the larger the magnitude of the t-value is, the less likely that the coefficient is 0.
 
 
-```{r}
-# investigate coefficients
-summary(model_hs_17to37)
-```
-
-
 
 ### <a id="potentialRelationshipTask"> Identify potential relationships between tasks </a>
-
 
 To penalty the irrelevant features and ensure the comparison across the models, we plan to apply group lasso. However, before applying the multi-task learning method, we want to ensure there are potential relationships between tasks.
 
 ```{r}
-motif_temperature_sensitive = c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA')
-```
+names_motifs_temperature_significant = c('UGUAHMNUA','TGTATAWT','ATATTC','TGTAAATA')
 
-```{r}
-names_temperature_condition = vector(mode="character", length=5)
-names_temperature_condition[1] = "hs_15min_hs-1"
-names_temperature_condition[2] = "hs_30min_hs-1"
-names_temperature_condition[3] = "hs_40min_hs-1"
-names_temperature_condition[4] = "hs_60min_hs-1"
-names_temperature_condition[5] = "hs_80min_hs-1"
+names_temperature_condition = c(
+  "hs_15min_hs-1",
+  "hs_30min_hs-1",
+  "hs_40min_hs-1",
+  "hs_60min_hs-1",
+  "hs_80min_hs-1"
+)
 ```
 
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
@@ -612,36 +615,31 @@ motif_overview <- as.data.frame(
   cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
 
 # plot motifs with high correlation coefficient
-ggplot(data = melt(setDT(as.data.frame(motif_overview[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+ggplot(data = melt(setDT(as.data.frame(motif_overview[names_motifs_temperature_significant,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + 
   geom_line(aes(colour=rn),size = 2) + 
   ylim(-0.3,0.1) + 
   labs(x = "after heat shock", y = "correlation coefficient") +
   scale_x_discrete(labels=c("hs_15min_hs-1" = "15min", "hs_30min_hs-1" = "30min","hs_40min_hs-1" = "40min","hs_60min_hs-1" = "60min","hs_80min_hs-1" = "80min")) + 
   theme(text = element_text(size=24))
-
 ```
-
-
-
-
 
 ```{r}
 # pick a group of temperature condition
-names_temperature_condition = vector(mode="character", length=3)
-names_temperature_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
-names_temperature_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
-names_temperature_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
-
+names_temperature_condition = c(
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_05min",
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_15min",
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+)
 ```
 
 ```{r echo=FALSE, fig.width=10, fig.height=7}
-
 # compute correlation coefficient
 motif_overview_steady_temperature <- as.data.frame(
   cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
 
-ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+# plot
+ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[names_motifs_temperature_significant,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn),size = 2) + ylim(-0.25,0.1) + 
   labs(x = "after heat shock with sorbitol", y = "correlation coefficient")+
   scale_x_discrete(labels=c("29C(1M_sorbitol)~33C(1M_sorbitol)_05min" = "5min", "29C(1M_sorbitol)~33C(1M_sorbitol)_15min" = "15min","29C(1M_sorbitol)~33C(1M_sorbitol)_30min" = "30min")) + 
@@ -649,30 +647,28 @@ ggplot(data = melt(setDT(as.data.frame(motif_overview_steady_temperature[motif_t
 ```
 
 
-
 ```{r}
-names_temperature_condition = vector(mode="character", length=5)
-names_temperature_condition[1] = "hs_37to25_15min"
-names_temperature_condition[2] = "hs_37to25_30min"
-names_temperature_condition[3] = "hs_37to25_45min"
-names_temperature_condition[4] = "hs_37to25_60min"
-names_temperature_condition[5] = "hs_37to25_90min"
+names_temperature_condition = c(
+  "hs_37to25_15min",
+  "hs_37to25_30min",
+  "hs_37to25_45min",
+  "hs_37to25_60min",
+  "hs_37to25_90min"
+)
 ```
 
 
 ```{r, echo=FALSE, fig.width=10, fig.height=7}
-
 # compute correlation coefficient
 motif_overview <- as.data.frame(
   cor(fullTable_Gasch[names_motifs_valid],fullTable_Gasch[names_temperature_condition], use = "na.or.complete"))
 
 ## plot motifs with high correlation coefficient
-ggplot(data = melt(setDT(as.data.frame(motif_overview[motif_temperature_sensitive,names_temperature_condition]), keep.rownames = TRUE), "rn"),
+ggplot(data = melt(setDT(as.data.frame(motif_overview[names_motifs_temperature_significant,names_temperature_condition]), keep.rownames = TRUE), "rn"),
        aes(x=variable,y=value,group = rn)) + geom_line(aes(colour=rn),size=2) + ylim(-0.1,0.2) + 
   labs(x = "after hypothermia from 37C to 25C", y = "correlation coefficient")+
   scale_x_discrete(labels=c("hs_37to25_15min" = "15min", "hs_37to25_30min" = "30min","hs_37to25_45min" = "45min","hs_37to25_60min" = "60min","hs_37to25_90min" = "90min")) + 
   theme(text = element_text(size=24))
-
 
 ```
 
@@ -763,7 +759,7 @@ na_count_sum[na_count_sum>315]
 ```
 
 
-### <a id="filterGene"> filter out gene with high value-missing ratio </a>
+### <a id="filterGene"> filter out gene with high value-missing ratio (>10%) </a>
 The gene with high missing value could be caused by low abundance of mRNA in the cell which means there could be large errors for the measurements on these gene. It is better to remove them first.
 ```{r}
 na_count_sum = rowSums(is.na(expressionLevel_Gasch[4:176]))
@@ -863,10 +859,11 @@ fullTable_Gasch_impute_knn <- merge(expressionLevel_impute_knn,ref_motifs,by = "
 ```
 
 
-### <a id="imputationBaseline"> baseline performance: simply replace missing value with mean of column </a>
+### <a id="imputationBaseline"> baseline performance: simply replace missing value with mean of column or 0 </a>
+##### NA to column mean
 As one of the easiest approach to deal with the missing values, we could simply replace them by mean of that column
 To estimate of the performance, we randomly knock out 0.1% of non-NA and check the mean square error.
-```{r}
+```{r echo=FALSE}
 baseline_df = data.frame(matrix(ncol = 1, nrow = 0))
 expressionLevel_matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
 storage.mode(expressionLevel_matrix) <- "double"
@@ -908,22 +905,60 @@ colnames(baseline_df) = c("mse")
 
 ```
 
-
-
-```{r}
+```{r echo=FALSE}
 baseline_ds = data.frame(matrix(ncol = 2, nrow = 0))
 baseline_ds = rbind(baseline_ds, c(mean(baseline_df$mse),sd(baseline_df$mse)))
 colnames(baseline_ds) = c("mean","sd")
 
 ```
 
+##### NA to zero
+```{r echo=FALSE}
+baseline2_df = data.frame(matrix(ncol = 1, nrow = 0))
+expressionLevel_matrix = as.matrix(expressionLevel_Gasch_filtered[4:length(expressionLevel_Gasch_filtered)])
+storage.mode(expressionLevel_matrix) <- "double"
+expressionLevel_column_mean = colMeans(expressionLevel_matrix,na.rm = TRUE)
 
+for(randomSeed in 362136666:362136675){
+  size_test = 1000
+  se = 0
+  
+  set.seed(randomSeed)
+  row_random = sample(1:dim(expressionLevel_matrix)[1],size_test*2,replace = TRUE)
+  column_random = sample(1:dim(expressionLevel_matrix)[2],size_test*2,replace = TRUE)
+  
+  i = 1
+  j = 1
+  while (i <= round(size_test*2) & j <= size_test) {
+    if(!is.na(expressionLevel_matrix[row_random[i],column_random[i]])){
+      se = se + (expressionLevel_matrix[row_random[i],column_random[i]])^2
+      j = j + 1
+    }
+    i = i + 1
+  }
+  
+  baseline2_df = rbind(baseline2_df, c(se/j))
+  print(paste("estimate mse = ",se/j))
+}
 
-```{r eval=eval_KNN_validation}
+colnames(baseline2_df) = c("mse")
+
+```
+
+```{r echo=FALSE}
+baseline2_ds = data.frame(matrix(ncol = 2, nrow = 0))
+baseline2_ds = rbind(baseline2_ds, c(mean(baseline2_df$mse),sd(baseline2_df$mse)))
+colnames(baseline2_ds) = c("mean","sd")
+```
+
+##### compare the between performance of kNN imputation, NA to column mean and NA to zero
+```{r eval=eval_KNN_validation, fig.width=8}
 ggplot() +
   geom_point(data = baseline_df, aes("NA to column mean", mse)) +
+  geom_point(data = baseline2_df, aes("NA to zero", mse)) +
   geom_point(data = k_value_validation_df[k_value_validation_df$k == 11,], aes("kNN imputation (k=11)",mse)) +
   geom_point(data = baseline_ds, aes("NA to column mean", mean), colour = 'red', size = 3) +
+  geom_point(data = baseline2_ds, aes("NA to zero", mean), colour = 'red', size = 3) +
   geom_point(data = k_value_validation_ds[k_value_validation_ds$k == 11,], aes("kNN imputation (k=11)", mean), colour = 'red', size = 3) +
   geom_errorbar(
     data = baseline_ds,
@@ -931,6 +966,12 @@ ggplot() +
     colour = 'red',
     width = 0.2
   ) + 
+  geom_errorbar(
+    data = baseline2_ds,
+    aes("NA to zero", mean, ymin = mean - sd, ymax = mean + sd),
+    colour = 'red',
+    width = 0.2
+  ) +
   geom_errorbar(
     data = k_value_validation_ds[k_value_validation_ds$k == 11,],
     aes("kNN imputation (k=11)", mean, ymin = mean - sd, ymax = mean + sd),
@@ -944,8 +985,7 @@ ggplot() +
 ```
 
 
-### consider motifs with non-zero frequency
-
+### consider only motifs with non-zero frequency
 ```{r}
 motifs_count_sum <- colSums(fullTable_Gasch[names_motifs_all],na.rm=TRUE)
 remove_list = NULL
@@ -960,7 +1000,7 @@ names_motifs_valid <- names_motifs_all[!names_motifs_all %in% remove_list]
 ```
 
 ### <a id="crossValidation"> choose lambda from 10-fold cross validation </a>
-We need to set the hyperparameter lambda to control the effect of penalization. A common approch to this is by cross validation.
+We need to set the hyperparameter lambda to control the effect of penalization. A general approch to this is by cross validation.
 ```{r echo=FALSE}
 x = as.matrix(fullTable_Gasch_impute_knn[names_motifs_valid])
 y = as.matrix(fullTable_Gasch_impute_knn[names_environmental_stress])
@@ -975,8 +1015,9 @@ plot(cv_models_all)
 
 ### <a id="trainingModels"> training model with selected lambda </a>
 training model with λ = `lambda.min` results in a model with highest expected performancec while training model with λ = `lambda.1se` results in a more conservative model with fewer non-zero regression coefficients.
+
 ```{r eval=!eval_crossValidation}
-# setting lambda manually
+# setting lambda manually when eval_crossValidation = False
 lambda.min = 0.0334379510944218
 lambda.1se = 0.235898134217399
 
@@ -1075,28 +1116,81 @@ hist(coefficients, main = 'histgram of non-zero coefficient when λ = lambda.1se
 ```
 
 
-### regulatory effect of motifs decrease as time pass in heat shock
-Here we plot a graph to show how the coefficient given to each motif change across the timeline after heat shock. For most of the motifs, their coefficients increase with shortly delay and reach their peak at 15mins. Than they gradually shift to 0 as time past. An explanation of the 15mins delay is that the cis-regulatory elements could regulate the expression level by adjusting the stability of mRNA which may need some time to decay.
-```{r include=FALSE}
-{
-  names_temperature_condition = vector(mode="character", length=7)
-  names_temperature_condition[1] = "hs_05min_hs-1"
-  names_temperature_condition[2] = "hs_10min_hs-1"
-  names_temperature_condition[3] = "hs_15min_hs-1"
-  names_temperature_condition[4] = "hs_30min_hs-1"
-  names_temperature_condition[5] = "hs_40min_hs-1"
-  names_temperature_condition[6] = "hs_60min_hs-1"
-  names_temperature_condition[7] = "hs_80min_hs-1"
-}
 
+### regulatory effect of motifs peaks at different times and decrease as time pass
+By extracting the regression coefficients given to motifs and sorting them with the previous grouping, we found that the regression coefficients of most motifs show a tendency to rise first, peak in a certain period and then fall. It describes the process of the regulation effect which gradually increases and returns to a stable state after the environmental stress. The time when the regulation effect reaches its peak varies with the type of environmental stress. For example, undereat shock-related environmental stress, the regression coefficients of most motifs peaked in about 15 minutes. while under diamide treatment, the regression coefficient of motifs generally reaches its peak after 30 minutes. It is worth mentioning that the degree of environmental stress has no obvious effect on the peaking period. As shown in Figure 5-1 and Figure 5-3, for most of the motifs, both their regression coefficients in `heat shock from 25°C to 37° C` and `heat shock from 29°C to 33° C `peaked at around 15 minutes. On the other hand, even under the same environmental conditions, not all the regression coefficients peak at the same period. This may because of the complex regulatory mechanism within the cell. While the cell adjusts its gene expression level, the number of regulatory elements (as products of the gene expression) such as RNA binding proteins that participate in regulation also changes, and lead to a change in the regulatory effect of motifs change as well.
+
+```{r fig.height=7, fig.width=9}
+
+names_temperature_condition = c(
+  "hs_05min_hs-1",
+  "hs_10min_hs-1",
+  "hs_15min_hs-1",
+  "hs_30min_hs-1",
+  "hs_40min_hs-1",
+  "hs_60min_hs-1",
+  "hs_80min_hs-1"
+)
+
+plot_models_line(models_all_minLambda, names_temperature_condition, 10)
 ```
 
 ```{r fig.height=7, fig.width=9}
+
+names_temperature_condition = c(
+  "hs_29to33_05min",
+  "hs_29to33_15min",
+  "hs_29to33_30min"
+)
+
 plot_models_line(models_all_minLambda, names_temperature_condition, 10)
 ```
 
 
+```{r fig.height=7, fig.width=9}
 
+names_diamide_condition = c(
+  "1.5mM_diamide_5min",
+  "1.5mM_diamide_10min",
+  "1.5mM_diamide_20min",
+  "1.5mM_diamide_30min",
+  "1.5mM_diamide_40min",
+  "1.5mM_diamide_50min",
+  "1.5mM_diamide_60min",
+  "1.5mM_diamide_90min"
+)
+
+plot_models_line(models_all_minLambda, names_diamide_condition, 10)
+```
+
+
+
+
+
+### select the period when gene expression effect is biggest with variance of log2 expression level
+
+
+| type of environmental stress | period when gene expression effect is biggest (min) |
+| :--------------------------: | :-------------------------------------------------: |
+|          heatshock           |                       15 ~ 20                       |
+|         hypothermia          |                       15, 60                        |
+|      sorbitol treatment      |                       30 ~ 45                       |
+|      nitrogen depletion      |                     2880 ~ 7200                     |
+|      diamide treatment       |                       30 ~ 40                       |
+|   dithiothrietol exposure    |                       20 ~ 60                       |
+|      menadione exposure      |                  30 ~ 40,  80~120                   |
+| hydrogen peroxide treatment  |                       20 ~ 30                       |
+
+
+```{r}
+expressionLevel_matrix = as.matrix(expressionLevel_impute_knn[4:length(expressionLevel_Gasch)])
+storage.mode(expressionLevel_matrix) <- "double"
+expressionLevel_column_variance = colMeans(expressionLevel_matrix*expressionLevel_matrix)-colMeans(expressionLevel_matrix)*colMeans(expressionLevel_matrix)
+```
+
+```{r}
+expressionLevel_column_variance
+```
 
 
 
@@ -1106,42 +1200,37 @@ plot_models_line(models_all_minLambda, names_temperature_condition, 10)
 With the models from group lasso, we can carefully select the regression coefficient from different groups of environmental conditions and compare them. By calculating the sum and L2 norm of their coefficient under each group of environmental condition, we are able to compare how the regulatory effect of each motif differ in each environmental stress. 
 
 ```{r}
-{
-  names_heatshock_29to33_condition = vector(mode="character", length=3)
-  names_heatshock_29to33_condition[1] = "hs_29to33_05min"
-  names_heatshock_29to33_condition[2] = "hs_29to33_15min"
-  names_heatshock_29to33_condition[3] = "hs_29to33_30min"
-}
+names_heatshock_29to33_condition = c(
+  "hs_29to33_05min",
+  "hs_29to33_15min",
+  "hs_29to33_30min"
+)
 
-{
-  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
-  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
-  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
-  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
-} 
+names_heatshock_sorbitol_condition = c(
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_05min",
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_15min",
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+)
 
-{
-  names_hypothermia_condition = vector(mode="character", length=3)
-  names_hypothermia_condition[1] = "hs_37to25_15min"
-  names_hypothermia_condition[2] = "hs_37to25_30min"
-  names_hypothermia_condition[3] = "hs_37to25_60min"
-} 
+names_hypothermia_condition = c(
+  "hs_37to25_15min",
+  "hs_37to25_30min",
+  "hs_37to25_60min"
+)
 
-{
-  names_heatshock_25to37_condition = vector(mode="character", length=3)
-  names_heatshock_25to37_condition[1] = "hs_15min_hs-1"
-  names_heatshock_25to37_condition[2] = "hs_30min_hs-1"
-  names_heatshock_25to37_condition[3] = "hs_60min_hs-1"
-} 
-
+names_heatshock_25to37_condition = c(
+  "hs_15min_hs-1",
+  "hs_30min_hs-1",
+  "hs_60min_hs-1"
+)
 
 ```
 
 
 
 ```{r echo=FALSE}
-
-summary_coefficient = data.frame(matrix(ncol = 4, nrow = 0))
+# prepare summary dataframe
+summary_coefficient = data.frame(matrix(ncol = 6, nrow = 0))
 
 coefficients = extract_coefficient(models_all_minLambda,names_environmental_stress)
 
@@ -1151,7 +1240,9 @@ for(motif in names_motifs_valid){
     motif = motif,
     condition = "all",
     sum = sum(coefficients_motif_specific),
-    L2 = sqrt(sum(coefficients_motif_specific^2))
+    mean = sum(coefficients_motif_specific)/length(names_environmental_stress),
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2)/length(names_environmental_stress))
   ))
 }
 
@@ -1166,7 +1257,9 @@ for(motif in names_motifs_valid){
     motif = motif,
     condition = "heat shock from 29C to 33C",
     sum = sum(coefficients_motif_specific),
-    L2 = sqrt(sum(coefficients_motif_specific^2))
+    mean = sum(coefficients_motif_specific)/length(names_heatshock_29to33_condition),
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2)/length(names_heatshock_29to33_condition))
   ))
 }
 
@@ -1179,7 +1272,9 @@ for(motif in names_motifs_valid){
     motif = motif,
     condition = "heat shock with sorbitol",
     sum = sum(coefficients_motif_specific),
-    L2 = sqrt(sum(coefficients_motif_specific^2))
+    mean = sum(coefficients_motif_specific)/length(names_heatshock_sorbitol_condition),
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2)/length(names_heatshock_sorbitol_condition))
   ))
 }
 
@@ -1192,11 +1287,11 @@ for(motif in names_motifs_valid){
     motif = motif,
     condition = "hypothermia from 37C to 25C",
     sum = sum(coefficients_motif_specific),
-    L2 = sqrt(sum(coefficients_motif_specific^2))
+    mean = sum(coefficients_motif_specific)/length(names_hypothermia_condition),
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2)/length(names_hypothermia_condition))
   ))
 }
-
-
 
 
 coefficients = extract_coefficient(models_all_minLambda,names_heatshock_25to37_condition)
@@ -1207,7 +1302,9 @@ for(motif in names_motifs_valid){
     motif = motif,
     condition = "heat shock from 25C to 37C",
     sum = sum(coefficients_motif_specific),
-    L2 = sqrt(sum(coefficients_motif_specific^2))
+    mean = sum(coefficients_motif_specific)/length(names_heatshock_25to37_condition),
+    L2 = sqrt(sum(coefficients_motif_specific^2)),
+    meanL2 = sqrt(sum(coefficients_motif_specific^2)/length(names_heatshock_25to37_condition))
   ))
 }
 
@@ -1259,14 +1356,14 @@ temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coeffici
 temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(unique(temp_summary_coefficient$motif),20),]
 
 
-ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=L2, fill=condition)) +
+ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=meanL2, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_x_discrete(name ="Motif") + 
-  ggtitle("L2 of the non-zero regression coefficient of significant motifs under heat shock and hypothermia after 15, 30 and 60 min")
+  ggtitle("mean L2 of the non-zero regression coefficient of significant motifs under heat shock and hypothermia after 15, 30 and 60 min")
 ```
 
 ```{r echo=FALSE, fig.height=8, fig.width=14}
@@ -1275,14 +1372,14 @@ temp_summary_coefficient = temp_summary_coefficient[order(-temp_summary_coeffici
 temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$motif %in% head(unique(temp_summary_coefficient$motif),20),]
 
 
-ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=sum, fill=condition)) +
+ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=mean, fill=condition)) +
   geom_bar(stat="identity", position=position_dodge()) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_x_discrete(name ="Motif") + 
-  ggtitle("Sum of the non-zero regression coefficient of significant motifs under heat shock and hypothermia after 15, 30 and 60 min")
+  ggtitle("Mean of the non-zero regression coefficient of significant motifs under heat shock and hypothermia after 15, 30 and 60 min")
 ```
 
 
@@ -1329,7 +1426,6 @@ ggplot(data=temp_summary_coefficient, aes(x=reorder(motif,-L2), y=sum, fill=cond
 
 
 
-
 ### <a id="frequencyCoefficient">investigate the transcript frequency of each motif against their coefficient</a>
 
 ```{r}
@@ -1345,17 +1441,17 @@ temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$mot
 
 
 ggplot(data=temp_summary_coefficient, aes(x=motif)) +
-  geom_bar(stat="identity", aes(y=L2,fill = condition)) +
-  geom_line(aes(y = transcriptAmount*3, colour = "log10 transcript frequency"),group=1, size=2) +
-  geom_text(aes(y = transcriptAmount*3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  geom_bar(stat="identity", aes(y=meanL2,fill = condition)) +
+  geom_line(aes(y = transcriptAmount/2.5, colour = "log10 transcript frequency"),group=1, size=2) +
+  geom_text(aes(y = transcriptAmount/2.5, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
   scale_x_discrete(name ="Motif") + 
-  ylim(0,10.5)+
-  ggtitle("frequency vs L2 of each motif under all condition")
+  ylim(0,1.5)+
+  ggtitle("frequency vs mean L2 of each motif under all condition")
 ```
 
 
@@ -1366,16 +1462,16 @@ temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$mot
 
 
 ggplot(data=temp_summary_coefficient, aes(x=motif)) +
-  geom_bar(stat="identity", aes(y=L2,fill = condition)) +
-  geom_line(aes(y = transcriptAmount*3, colour = "log10 transcript frequency"),group=1, size=2) +
-  geom_text(aes(y = transcriptAmount*3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
+  geom_bar(stat="identity", aes(y=meanL2,fill = condition)) +
+  geom_line(aes(y = transcriptAmount/2.5, colour = "log10 transcript frequency"),group=1, size=2) +
+  geom_text(aes(y = transcriptAmount/2.5, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
   scale_x_discrete(name ="Motif") + 
-  ylim(0,10.5)+
+  ylim(0,1.5)+
   ggtitle("frequency vs L2 of each motif under all condition")
 ```
 
@@ -1387,7 +1483,7 @@ temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$mot
 
 
 ggplot(data=temp_summary_coefficient, aes(x=motif)) +
-  geom_bar(stat="identity", position=position_dodge(), aes(y=L2,fill = condition)) +
+  geom_bar(stat="identity", position=position_dodge(), aes(y=meanL2,fill = condition)) +
   geom_line(aes(y = transcriptAmount/3, colour = "log10 transcript frequency"),group=1, size=2) +
   geom_text(aes(y = transcriptAmount/3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
@@ -1397,7 +1493,7 @@ ggplot(data=temp_summary_coefficient, aes(x=motif)) +
   scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
   scale_x_discrete(name ="Motif") + 
   ylim(0,1.2)+
-  ggtitle("frequency vs L2 of each motif under heat shock with and without sorbitol")
+  ggtitle("frequency vs mean L2 of each motif under heat shock with and without sorbitol")
 ```
 
 
@@ -1409,7 +1505,7 @@ temp_summary_coefficient = temp_summary_coefficient[temp_summary_coefficient$mot
 
 
 ggplot(data=temp_summary_coefficient, aes(x=motif)) +
-  geom_bar(stat="identity", position=position_dodge(), aes(y=L2,fill = condition)) +
+  geom_bar(stat="identity", position=position_dodge(), aes(y=meanL2,fill = condition)) +
   geom_line(aes(y = transcriptAmount/3, colour = "log10 transcript frequency"),group=1, size=2) +
   geom_text(aes(y = transcriptAmount/3, label = round(transcriptAmount, 1)), vjust = -1.0, color = "black", size = 4) +
   theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
@@ -1428,19 +1524,17 @@ ggplot(data=temp_summary_coefficient, aes(x=motif)) +
 ### <a id="boxPlot"> box graph for cross comparison between two type of environmental stress </a>
 To compare how the coefficient of motif from two different type of environmental stress, we plot a box graph show the difference between the coefficients from two group of models.
 ```{r}
-{
-  names_heatshock_29to33_condition = vector(mode="character", length=3)
-  names_heatshock_29to33_condition[1] = "hs_29to33_05min"
-  names_heatshock_29to33_condition[2] = "hs_29to33_15min"
-  names_heatshock_29to33_condition[3] = "hs_29to33_30min"
-}
+names_heatshock_29to33_condition = c(
+  "hs_29to33_05min",
+  "hs_29to33_15min",
+  "hs_29to33_30min"
+)
 
-{
-  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
-  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
-  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
-  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
-} 
+names_heatshock_sorbitol_condition = c(
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_05min",
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_15min",
+  "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
+)
 
 ```
 
@@ -1488,26 +1582,24 @@ ggplot(data=coefficients[coefficients$motif %in% tail(order_motifs,31)], aes(x=m
 
 ```{r}
 
-{
-  names_heatshock_25to37_condition = vector(mode="character", length=8)
-  names_heatshock_25to37_condition[1] = "hs_05min_hs-1"
-  names_heatshock_25to37_condition[2] = "hs_10min_hs-1"
-  names_heatshock_25to37_condition[3] = "hs_15min_hs-1"
-  names_heatshock_25to37_condition[4] = "hs_20min_hs-1"
-  names_heatshock_25to37_condition[5] = "hs_30min_hs-1"
-  names_heatshock_25to37_condition[6] = "hs_40min_hs-1"
-  names_heatshock_25to37_condition[7] = "hs_60min_hs-1"
-  names_heatshock_25to37_condition[8] = "hs_80min_hs-1"
-}
+names_heatshock_25to37_condition = c(
+  "hs_05min_hs-1",
+  "hs_10min_hs-1",
+  "hs_15min_hs-1",
+  "hs_20min_hs-1",
+  "hs_30min_hs-1",
+  "hs_40min_hs-1",
+  "hs_60min_hs-1",
+  "hs_80min_hs-1"
+)
 
-{
-  names_heatshock_37to25_condition = vector(mode="character", length=5)
-  names_heatshock_37to25_condition[1] = "hs_37to25_15min"
-  names_heatshock_37to25_condition[2] = "hs_37to25_30min"
-  names_heatshock_37to25_condition[3] = "hs_37to25_45min"
-  names_heatshock_37to25_condition[4] = "hs_37to25_60min"
-  names_heatshock_37to25_condition[5] = "hs_37to25_90min"
-}
+names_heatshock_37to25_condition = c(
+  "hs_37to25_15min",
+  "hs_37to25_30min",
+  "hs_37to25_45min",
+  "hs_37to25_60min",
+  "hs_37to25_90min"
+)
 
 ```
 
@@ -1600,6 +1692,13 @@ for(environmental_stress in names_environmental_stress){
   names_heatshock_37to25_condition[3] = "hs_37to25_45min"
   names_heatshock_37to25_condition[4] = "hs_37to25_60min"
   names_heatshock_37to25_condition[5] = "hs_37to25_90min"
+}
+
+{
+  names_heatshock_sorbitol_condition = vector(mode="character", length=3)
+  names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
+  names_heatshock_sorbitol_condition[2] = "29C(1M_sorbitol)~33C(1M_sorbitol)_15min"
+  names_heatshock_sorbitol_condition[3] = "29C(1M_sorbitol)~33C(1M_sorbitol)_30min"
 }
 
 {
@@ -1713,6 +1812,18 @@ for (motif in names_motifs_valid) {
 }
 
 
+temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_heatshock_sorbitol_condition,]
+for (motif in names_motifs_valid) {
+  temp_coefficient_rank_2 = temp_coefficient_rank[temp_coefficient_rank$motif == motif,]
+  
+  summary_coefficient_rank_average = rbind(summary_coefficient_rank_average, data.frame(
+    motif = motif,
+    rank = sum(temp_coefficient_rank_2$model.L2*temp_coefficient_rank_2$rank)/
+      sum(temp_coefficient_rank_2$model.L2),
+    group = "heat shock sorbitol"
+  ))
+}
+
 
 temp_coefficient_rank = summary_coefficient_rank[summary_coefficient_rank$condition %in% names_sorbitol_condition,]
 for (motif in names_motifs_valid) {
@@ -1821,7 +1932,7 @@ ggplot(data=summary_coefficient_rank_average[summary_coefficient_rank_average$mo
   scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
   scale_y_continuous("1 / weighted rank", sec.axis = sec_axis(~.*2, name = "Log10 transcript frequency"), limits = c(0,2)) +
   ggtitle("average rank motifs from different group of environmental stresses")+
-  scale_fill_manual(values=c('#333333','#ACE5EE','#03C03C','#E69F00','#3C69E7','#999999','#E30022','#9933CC'))
+  scale_fill_manual(values=c('#333333','#ACE5EE','#03C03C','#E69F00','#3C69E7','#999999','#E30022','#9933CC','#999966'))
 
 ```
 
@@ -1838,8 +1949,7 @@ ggplot(data=summary_coefficient_rank_average[summary_coefficient_rank_average$mo
   scale_colour_manual(name="", values=c("log10 transcript frequency"="gray20"))+
   scale_y_continuous("1 / weighted rank", sec.axis = sec_axis(~.*2, name = "Log10 transcript frequency"), limits = c(0,2)) +
   ggtitle("average rank motifs from different group of environmental stresses")+
-  scale_fill_manual(values=c('#333333','#ACE5EE','#03C03C','#E69F00','#3C69E7','#999999','#E30022','#9933CC'))
-
+  scale_fill_manual(values=c('#333333','#ACE5EE','#03C03C','#E69F00','#3C69E7','#999999','#E30022','#9933CC','#999966'))
 ```
 
 
@@ -2034,14 +2144,6 @@ ggplot(data=summary_bias[summary_bias$condition %in% names_diamide_condition,], 
 
 
 
-
-
-
-
-
-
-
-
 ### <a id="weightedL2"> Select motif with weighted square L2 </a>
 In order to focus only on the significant motifs, we calculate the `variance predict by motif` for each motif over all the conditions. In this case, we consider no only the regression coefficient but also the transcript frequence: 
 $$
@@ -2075,6 +2177,7 @@ $$
   names_heatshock_29to33_condition[3] = "hs_29to33_30min"
 }
 
+
 {
   names_heatshock_sorbitol_condition = vector(mode="character", length=3)
   names_heatshock_sorbitol_condition[1] = "29C(1M_sorbitol)~33C(1M_sorbitol)_05min"
@@ -2084,38 +2187,53 @@ $$
 
 
 {
-  names_heatshock_25to37_condition = vector(mode="character", length=4)
+  names_heatshock_25to37_condition = vector(mode="character", length=8)
   names_heatshock_25to37_condition[1] = "hs_05min_hs-1"
-  names_heatshock_25to37_condition[2] = "hs_15min_hs-1"
-  names_heatshock_25to37_condition[3] = "hs_30min_hs-1"
-  names_heatshock_25to37_condition[4] = "hs_60min_hs-1"
+  names_heatshock_25to37_condition[2] = "hs_10min_hs-1"
+  names_heatshock_25to37_condition[3] = "hs_15min_hs-1"
+  names_heatshock_25to37_condition[4] = "hs_20min_hs-1"
+  names_heatshock_25to37_condition[5] = "hs_30min_hs-1"
+  names_heatshock_25to37_condition[6] = "hs_40min_hs-1"
+  names_heatshock_25to37_condition[7] = "hs_60min_hs-1"
+  names_heatshock_25to37_condition[8] = "hs_80min_hs-1"
 }
 
+
 {
-  names_heatshock_37to25_condition = vector(mode="character", length=4)
+  names_heatshock_37to25_condition = vector(mode="character", length=5)
   names_heatshock_37to25_condition[1] = "hs_37to25_15min"
   names_heatshock_37to25_condition[2] = "hs_37to25_30min"
   names_heatshock_37to25_condition[3] = "hs_37to25_45min"
   names_heatshock_37to25_condition[4] = "hs_37to25_60min"
+  names_heatshock_37to25_condition[5] = "hs_37to25_90min"
 }
 
+
 {
-  names_sorbitol_condition = vector(mode="character", length=5)
+  names_sorbitol_condition = vector(mode="character", length=7)
   names_sorbitol_condition[1] = "1M_sorbitol_05min"
   names_sorbitol_condition[2] = "1M_sorbitol_15min"
   names_sorbitol_condition[3] = "1M_sorbitol_30min"
   names_sorbitol_condition[4] = "1M_sorbitol_45min"
   names_sorbitol_condition[5] = "1M_sorbitol_60min"
+  names_sorbitol_condition[6] = "1M_sorbitol_90min"
+  names_sorbitol_condition[7] = "1M_sorbitol_120min"
 }
 
+
 {
-  names_Nitrogen_condition = vector(mode="character", length=2)
+  names_Nitrogen_condition = vector(mode="character", length=7)
   names_Nitrogen_condition[1] = "Nitrogen_Depletion_30min"
   names_Nitrogen_condition[2] = "Nitrogen_Depletion_1h"
+  names_Nitrogen_condition[3] = "Nitrogen_Depletion_2h"
+  names_Nitrogen_condition[4] = "Nitrogen_Depletion_4h"
+  names_Nitrogen_condition[5] = "Nitrogen_Depletion_8h"
+  names_Nitrogen_condition[6] = "Nitrogen_Depletion_12h"
+  names_Nitrogen_condition[7] = "Nitrogen_Depletion_1d"
 }
 
 {
-  names_diamide_condition = vector(mode="character", length=7)
+  names_diamide_condition = vector(mode="character", length=8)
   names_diamide_condition[1] = "1.5mM_diamide_5min"
   names_diamide_condition[2] = "1.5mM_diamide_10min"
   names_diamide_condition[3] = "1.5mM_diamide_20min"
@@ -2123,35 +2241,49 @@ $$
   names_diamide_condition[5] = "1.5mM_diamide_40min"
   names_diamide_condition[6] = "1.5mM_diamide_50min"
   names_diamide_condition[7] = "1.5mM_diamide_60min"
+  names_diamide_condition[8] = "1.5mM_diamide_90min"
 }
 
 
+
 {
-  names_dithiothrietol_condition = vector(mode="character", length=5)
+  names_dithiothrietol_condition = vector(mode="character", length=7)
   names_dithiothrietol_condition[1] = "2.5mM_DTT_005min_dtt-1"
   names_dithiothrietol_condition[2] = "2.5mM_DTT_015min_dtt-1"
   names_dithiothrietol_condition[3] = "2.5mM_DTT_030min_dtt-1"
   names_dithiothrietol_condition[4] = "2.5mM_DTT_045min_dtt-1"
   names_dithiothrietol_condition[5] = "2.5mM_DTT_060min_dtt-1"
+  names_dithiothrietol_condition[6] = "2.5mM_DTT_090min_dtt-1"
+  names_dithiothrietol_condition[7] = "2.5mM_DTT_120min_dtt-1"
+  names_dithiothrietol_condition[8] = "2.5mM_DTT_180min_dtt-1"
 }
 
+
+
 {
-  names_meanadione_condition = vector(mode="character", length=5)
+  names_meanadione_condition = vector(mode="character", length=9)
   names_meanadione_condition[1] = "1mM_Menadione_10min_redo"
   names_meanadione_condition[2] = "1mM_Menadione_20min_redo"
   names_meanadione_condition[3] = "1mM_Menadione_30min_redo"
   names_meanadione_condition[4] = "1mM_Menadione_40min_redo"
   names_meanadione_condition[5] = "1mM_Menadione_50min_redo"
+  names_meanadione_condition[6] = "1mM_Menadione_80min_redo"
+  names_meanadione_condition[7] = "1mM_Menadione_105min_redo"
+  names_meanadione_condition[8] = "1mM_Menadione_120min_redo"
+  names_meanadione_condition[9] = "1mM_Menadione_160min_redo"
 }
 
 {
-  names_H2O2_condition = vector(mode="character", length=6)
+  names_H2O2_condition = vector(mode="character", length=9)
   names_H2O2_condition[1] = "0.32mM_H2O2_10min_redo"
   names_H2O2_condition[2] = "0.32mM_H2O2_20min_redo"
   names_H2O2_condition[3] = "0.32mM_H2O2_30min_redo"
   names_H2O2_condition[4] = "0.32mM_H2O2_40min_rescan"
   names_H2O2_condition[5] = "0.32mM_H2O2_50min_redo"
   names_H2O2_condition[6] = "0.32mM_H2O2_60min_redo"
+  names_H2O2_condition[7] = "0.32mM_H2O2_80min_redo"
+  names_H2O2_condition[8] = "0.32mM_H2O2_120min_redo"
+  names_H2O2_condition[9] = "0.32mM_H2O2_160min_redo"
 }
 
 
@@ -2360,6 +2492,7 @@ summary_coefficient = merge(x = summary_coefficient, y = summary_motif_frequency
 
 ```{r echo=FALSE}
 summary_coefficient$weightedsquareL2 = summary_coefficient$transcriptAmount*summary_coefficient$L2*summary_coefficient$L2
+summary_coefficient$weightedsquaremeanL2 = summary_coefficient$transcriptAmount*summary_coefficient$meanL2*summary_coefficient$meanL2
 ```
 
 
@@ -2367,11 +2500,28 @@ summary_coefficient$weightedsquareL2 = summary_coefficient$transcriptAmount*summ
 ##### manage plotting order
 ```{r echo=FALSE}
 temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
-order_motifs = temp_summary_coefficient[order(-temp_summary_coefficient$weightedsquareL2),]$motif
+order_motifs = temp_summary_coefficient[order(-temp_summary_coefficient$weightedsquaremeanL2),]$motif
 summary_coefficient$motif = factor(summary_coefficient$motif, levels = order_motifs)
 ```
 
 ##### plotting the weighted square L2 of each motif
+```{r echo=FALSE, fig.height=8, fig.width=14}
+temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
+
+ggplot(data=temp_summary_coefficient[temp_summary_coefficient$motif %in% head(order_motifs,31),], 
+       aes(x=motif, y=weightedsquaremeanL2, fill=condition)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        title = element_text(size = 14)) + 
+  scale_x_discrete(name ="Motif") + 
+  ggtitle("weighted square mean L2 of the non-zero regression coefficient under all condition")
+```
+
+
+
 ```{r echo=FALSE, fig.height=8, fig.width=14}
 temp_summary_coefficient = summary_coefficient[summary_coefficient$condition == "all",]
 
@@ -2384,7 +2534,7 @@ ggplot(data=temp_summary_coefficient[temp_summary_coefficient$motif %in% head(or
         axis.title = element_text(size = 16),
         title = element_text(size = 14)) + 
   scale_x_discrete(name ="Motif") + 
-  ggtitle("weighted L2 of the non-zero regression coefficient under all condition")
+  ggtitle("weighted square L2 of the non-zero regression coefficient under all condition")
 ```
 
 
@@ -2417,7 +2567,7 @@ ggplot(data=temp_summary_coefficient, aes(x=motif, y=meanL2, fill=condition)) +
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_x_discrete(name ="Motif") +
-  ylim(0,0.65) +
+  ylim(0,2) +
   ggtitle("compare mean L2 of motif from different environmental stresses group")
 ```
 
@@ -2433,7 +2583,7 @@ ggplot(data=temp_summary_coefficient, aes(x=motif, y=meanL2, fill=condition)) +
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
   scale_x_discrete(name ="Motif") + 
-  ylim(0,0.65) +
+  ylim(0,2) +
   ggtitle("compare mean L2 of motif from different environmental stresses group")
 ```
 
@@ -2688,7 +2838,7 @@ plot(model_hs_37to25)
 
 ##### sorbitol
 ```{r echo=FALSE, fig.height=6, fig.width=8}
-fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1M_sorbitol_15min`
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1M_sorbitol_30min`
 formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
 model_sorbitol = lm(formula_model,fullTable_Gasch_impute_knn)
 
@@ -2699,7 +2849,7 @@ plot(model_sorbitol)
 
 ##### nitrogen
 ```{r echo=FALSE, fig.height=6, fig.width=8}
-formula_model = as.formula(paste("Nitrogen_Depletion_30min ~",paste(names_motifs_significant, collapse = "+")))
+formula_model = as.formula(paste("Nitrogen_Depletion_2d ~",paste(names_motifs_significant, collapse = "+")))
 model_nitrogen = lm(formula_model,fullTable_Gasch_impute_knn)
 
 par(mfrow=c(2,2))
@@ -2708,7 +2858,7 @@ plot(model_nitrogen)
 
 ##### dianide
 ```{r echo=FALSE, fig.height=6, fig.width=8}
-fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$'1.5mM_diamide_20min'
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1.5mM_diamide_30min`
 formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
 model_diamide = lm(formula_model,fullTable_Gasch_impute_knn)
 
@@ -2719,7 +2869,7 @@ plot(model_diamide)
 
 ##### dithiothriethol
 ```{r echo=FALSE, fig.height=6, fig.width=8}
-fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`2.5mM_DTT_015min_dtt-1`
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`2.5mM_DTT_045min_dtt-1`
 formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
 model_dithiothriethol = lm(formula_model,fullTable_Gasch_impute_knn)
 
@@ -2730,7 +2880,7 @@ plot(model_dithiothriethol)
 
 ##### menadione
 ```{r echo=FALSE, fig.height=6, fig.width=8}
-fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1mM_Menadione_20min_redo`
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`1mM_Menadione_30min_redo`
 formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
 model_menadione = lm(formula_model,fullTable_Gasch_impute_knn)
 
@@ -2742,7 +2892,7 @@ plot(model_menadione)
 
 ##### H2O2
 ```{r echo=FALSE, fig.height=6, fig.width=8}
-fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`0.32mM_H2O2_20min_redo`
+fullTable_Gasch_impute_knn$temp = fullTable_Gasch_impute_knn$`0.32mM_H2O2_30min_redo`
 formula_model = as.formula(paste("temp ~",paste(names_motifs_significant, collapse = "+")))
 model_H2O2 = lm(formula_model,fullTable_Gasch_impute_knn)
 
@@ -2776,12 +2926,12 @@ summary_coefficient = rbind(
 ggplot(summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[1:3],], aes(x=motif, y=Estimate, group=condition, color=condition)) + 
   geom_hline(yintercept=0, linetype="dashed", size = 2, color = "gray50")+
   geom_point(position=position_dodge(0.6),size = 3)+
-  geom_errorbar(aes(ymin=Estimate-Std..Error, ymax=Estimate+Std..Error),width=.8,size=1,position=position_dodge(0.6))+
+  geom_errorbar(aes(ymin=Estimate-2*Std..Error, ymax=Estimate+2*Std..Error),width=.8,size=1,position=position_dodge(0.6))+
   theme(axis.text.x = element_text(size = 16),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
-  ylim(1,-1.1)+
+  ylim(-1.1,1)+
   ggtitle("linear regression coefficient of significant motifs under each environmental stress")
 
 ```
@@ -2791,14 +2941,19 @@ ggplot(summary_coefficient[summary_coefficient$motif %in% names_motifs_significa
 ggplot(summary_coefficient[summary_coefficient$motif %in% names_motifs_significant[4:6],], aes(x=motif, y=Estimate, group=condition, color=condition)) + 
   geom_hline(yintercept=0, linetype="dashed", size = 2, color = "gray50")+
   geom_point(position=position_dodge(0.6),size = 3)+
-  geom_errorbar(aes(ymin=Estimate-Std..Error, ymax=Estimate+Std..Error), width=.8, size=1,position=position_dodge(0.6))+
+  geom_errorbar(aes(ymin=Estimate-2*Std..Error, ymax=Estimate+2*Std..Error), width=.8, size=1,position=position_dodge(0.6))+
   theme(axis.text.x = element_text(size = 16),
         axis.text.y = element_text(size = 16),
         legend.text = element_text(size = 16),
         axis.title = element_text(size = 16)) + 
-  ylim(1,-1.1)+
+  ylim(-1,1.1)+
   ggtitle("linear regression coefficient of significant motifs under each environmental stress")
 
 ```
+
+
+
+
+
 
 

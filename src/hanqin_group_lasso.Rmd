@@ -135,7 +135,7 @@ plot_models_line <- function(models, conditions, lineNumber) {
     if((i+lineNumber)<= dim(coefficients)[1]){
       print(
       ggplot(data = melt(setDT(coefficients[i:(i+lineNumber-1)], keep.rownames = TRUE), "rn"), aes(x=variable,y=value,group = rn)) + 
-        geom_line(aes(colour=rn), size = 1.2)+
+        geom_line(aes(colour=rn), size = 1.5)+
         labs(x = "model", y = "regression coefficient") +
         theme(axis.text.x = element_text(size = 16, angle = 60, hjust = 1),axis.text.y = element_text(size = 16),axis.title=element_text(size=16,face="bold"))
       )
@@ -706,6 +706,24 @@ Here we plot a graph to show how the coefficient given to each motif change acro
 
 ```{r fig.height=7, fig.width=9}
 plot_models_line(models_all_minLambda, names_temperature_condition, 10)
+```
+
+```{r include=FALSE}
+{
+  names_diamide_condition = vector(mode="character", length=8)
+  names_diamide_condition[1] = "1.5mM_diamide_5min"
+  names_diamide_condition[2] = "1.5mM_diamide_10min"
+  names_diamide_condition[3] = "1.5mM_diamide_20min"
+  names_diamide_condition[4] = "1.5mM_diamide_30min"
+  names_diamide_condition[5] = "1.5mM_diamide_40min"
+  names_diamide_condition[6] = "1.5mM_diamide_50min"
+  names_diamide_condition[7] = "1.5mM_diamide_60min"
+  names_diamide_condition[8] = "1.5mM_diamide_90min"
+}
+```
+
+```{r fig.height=7, fig.width=9}
+plot_models_line(models_all_minLambda, names_diamide_condition, 10)
 ```
 
 ### compare coefficients under heat shock and heat shock with sorbital (uncompleted)

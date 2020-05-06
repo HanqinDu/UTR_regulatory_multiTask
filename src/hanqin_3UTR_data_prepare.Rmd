@@ -38,6 +38,7 @@ gene_sequence_required = setdiff(expressionLevel_Gasch$geneName,UTR_all$genename
 write(gene_sequence_required, "../data/gene_3UTR_required.txt")
 ```
 
+
 ### convert retrieve result from fungiDB to table
 ```{r}
 file_download <- read.delim("../data/gene_3UTR_fungiDB")
@@ -61,6 +62,8 @@ write.csv(table_3UTR, "../data/3UTR_fungiDB", append = FALSE, sep = " ", dec = "
 ```
 
 
+
+
 ### gene that not been returned from fungiDB
 ```{r}
 names_gene_fungiDB_miss = setdiff(gene_sequence_required,table_3UTR$genename)
@@ -82,7 +85,6 @@ write(gene_sequence_required, "../data/gene_3UTR_required.txt")
 
 
 # investigate new UTR sequence data
-
 
 ### Load Data
 ***
@@ -241,5 +243,153 @@ ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gen
   ylim(0,0.35)+
   ggtitle("frequency of each motif per gene according to the dataset from Cheng's study and fungiDB")
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### prepare 120 downstream of exist 3'UTR for comparison
+
+```{r}
+gene_sequence_SUN = expressionLevel_Gasch$geneName[expressionLevel_Gasch$geneName %in% UTR_all$genename]
+write(gene_sequence_SUN, "../data/gene_3UTR_SUN.txt")
+```
+
+```{r}
+file_download <- read.delim("../data/gene_3UTR_SUN_fungiDB")
+length_file = dim(file_download)[1]
+table_3UTR = data.frame(matrix(ncol = 2, nrow = 0))
+
+i = 1
+while(i < length_file){
+  table_3UTR = rbind(table_3UTR, data.frame(genename = file_download[i,1], "UTR3_seq" = file_download[i+1,1]))
+  i = i+2
+}
+
+table_3UTR$genename = sub(">","",table_3UTR$gene)
+
+```
+
+```{r}
+write.csv(table_3UTR, "../data/3UTR_SUN_fungiDB", append = FALSE, sep = " ", dec = ".", row.names = FALSE, col.names = TRUE)
+```
+
+
+
+### compare 120 downstream with actual 3'UTR
+
+```{r Load Data, echo=FALSE, warning=FALSE, message=FALSE}
+
+#ref datasets for UTRs 
+UTR_SUN_fungiDB = read_csv("../data/3UTR_SUN_fungiDB")
+
+#Get sequences from UTR_all in a separate vector
+UTR_3 <- UTR_SUN_fungiDB$UTR3_seq
+
+#Load Manually created motifs list into a vector
+motifs_raw <- scan("../data/list_motifs.txt", character())
+motifs_cheng = c("TGTAAATA", "TGCAT", "TTTTTTA", "ATATTC")
+
+
+```
+
+
+### Construct Motif Frequencies Matrix from 3'UTR Ref sequences
+```{r construct motif frequency, echo=FALSE}
+
+#Dictionary for non-specific codes and converting U -> T
+motifs <- motifs_raw %>% str_replace_all(c("U" = "T", "W" = "(A|T)", "S" = "(C|G)", "M" = "(A|C)", "K" = "(G|T)", "R" = "(A|G)", "Y" = "(C|T)", "B" = "(C|G|T)", "D" = "(A|G|T)", "H" = "(A|C|T)", "V" = "(A|C|G)", "N" = "(A|C|G|T)"))
+
+#Initate ref tibble and store gene names
+ref_motifs_120downstream <- tibble(geneName = UTR_SUN_fungiDB$genename)
+
+
+#Search and add frequency of each c(motif) as a column in ref dataset
+for (i in 1:length(motifs)){
+  ref_motifs_120downstream <- mutate(.data = ref_motifs_120downstream,!!motifs_raw[i] := str_count(UTR_3, motifs[i]))
+}
+
+names_motifs_all = names(ref_motifs)[2:length(ref_motifs)]
+```
+
+
+```{r}
+ref_motifs = ref_motifs[ref_motifs$geneName %in% ref_motifs_120downstream$geneName,]
+```
+
+
+
+### check the distribution of motif
+
+
+
+```{r}
+
+fullTable_Gasch_original = fullTable_Gasch[fullTable_Gasch$geneName %in% names_gene_cheng,]
+fullTable_Gasch_fungiDB = fullTable_Gasch[fullTable_Gasch$geneName %in% names_gene_fungiDB,]
+
+summary_motif_frequency = data.frame(matrix(ncol = 3, nrow = 0))
+
+for(m in names_motifs_all){
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = m,
+    dataset = "3_UTR",
+    frequency_per_gene = sum(ref_motifs[[m]])/nrow(ref_motifs)
+  ))
+  summary_motif_frequency = rbind(summary_motif_frequency, data.frame(
+    motif = m,
+    dataset = "120_downstream",
+    frequency_per_gene = sum(ref_motifs_120downstream[[m]])/nrow(ref_motifs_120downstream)
+  ))
+}
+
+```
+
+
+### plot the frequency per gene
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency_per_gene),]
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% head(unique(summary_motif_frequency$motif),35),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gene), y=frequency_per_gene, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.35)+
+  ggtitle("comparison of the frequency of each motif per gene between actual 3'UTR and 120 downstream")
+```
+
+```{r echo=FALSE, fig.height=8, fig.width=14}
+summary_motif_frequency = summary_motif_frequency[order(-summary_motif_frequency$frequency_per_gene),]
+summary_motif_frequency_temp = summary_motif_frequency[summary_motif_frequency$motif %in% tail(unique(summary_motif_frequency$motif),34),]
+
+ggplot(data=summary_motif_frequency_temp, aes(x=reorder(motif,-frequency_per_gene), y=frequency_per_gene, fill=dataset)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  theme(axis.text.x = element_text(size = 16, angle = 70, hjust = 1),
+        axis.text.y = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 16)) + 
+  scale_x_discrete(name ="Motif") + 
+  ylim(0,0.35)+
+  ggtitle("frequency of each motif per gene according to the dataset from Cheng's study and fungiDB")
+```
+
+
+
+
 
 
